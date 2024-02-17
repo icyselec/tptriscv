@@ -63,6 +63,7 @@ local function RvCreateInstance (instanceId)
 		},
 		stat = {
 			isHalted = false
+			isAligned = true
 		},
 		regs = {
 			gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -219,7 +220,12 @@ local function RvFetchInstruction (ctx)
 	return instruction
 end
 
+--[[
+==================================================================
+==================== Define of RISC-V Decoder ====================
+==================================================================
 
+]]
 
 local function RvDecode (ctx)
 	local inst = RvFetchInstruction(ctx)
@@ -227,22 +233,90 @@ local function RvDecode (ctx)
 
 	-- When instruction is C extension
 	if bit.band(inst, 3) ~= 3 then
-		RvThrowException("RvDecode: Not Supported Exception.")
-		return
+		retval = RvDecodeRV32C (ctx, inst)
+		retval = retval + RvDecodeRV32C (ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
+	else
+		retval = RvDecodeRV32I (ctx, inst)
 	end
 
-	local function decVal4_2 () return bit.rshift(bit.band(inst, 0x1C), 2) + 1 end
+	return retval
+end
 
-	local function decVal6_5 () return bit.rshift(bit.band(inst, 0x60), 5) + 1 end
+local function RvDecodeRV32C (ctx, inst)
+	local function decVal1_0 ()
+		return bit.band(inst, 0x3) + 1
+	end
 
-	local function decValFnt3 () return bit.rshift(bit.band(inst, 0x7000), 12) + 1 end
+	local function decValFnt3 ()
+		return bit.rshift(bit.band(inst, 0xE000), 13) + 1
+	end
 
+
+	local decTab1_0 = {
+		function ()
+			local rd_rs2 = bit.rshift(bit.band(inst, 0x1C), 2)
+			local rs1 = bit.rshift(bit.band(inst, 0x0380), 7)
+			local uimm = bit.rshift(bit.band(inst, 0x1C00), 7)
+			uimm = bit.bor(uimm, bit.rshift(bit.band(inst, 0x0040), 4))
+			uimm = bit.bor(uimm, bit.lshift(bit.band(inst, 0x0080), 1))
+
+			local decTabFnt3 = {
+				function ()
+					local nzuimm = bit.rshift(bit.band(inst, 0x1FE0), 5)
+
+
+				end,
+				-- C.FLD
+				function () return nil end, -- Not usable
+				-- C.LW
+				function ()
+					ctx.regs.gp[rd_rs2] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3)
+				end,
+				-- C.FLW
+				function () end,
+				-- Reserved
+				function () return nil end,
+				-- C.FSD
+				function () end,
+				-- C.SW
+				function ()
+					RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3, ctx.regs.gp[rd_rs2])
+				end,
+				-- C.FSW
+				function () end,
+			}
+		end,
+		function () end,
+		function () end,
+	}
+
+	local func = decTab1_0[decVal4_2()]
+	if func == nil then return false end
+	local retval = func()
+
+	-- register number 0 is always zero
+	ctx.regs.gp[1] = 0
+	return func()
+end
+
+local function RvDecodeRV32I (ctx, inst)
+	local function decVal4_2 ()
+		return bit.rshift(bit.band(inst, 0x1C), 2) + 1
+	end
+
+	local function decVal6_5 ()
+		return bit.rshift(bit.band(inst, 0x60), 5) + 1
+	end
+
+	local function decValFnt3 ()
+		return bit.rshift(bit.band(inst, 0x7000), 12) + 1
+	end
 
 	local decTab4_2 = {
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
 			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
-			local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20)
+			local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20) + 1 -- maybe plus one
 			local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
 
 			local decTab6_5 = {
@@ -524,6 +598,8 @@ local function RvDecode (ctx)
 	if func == nil then return false end
 	return func()
 end
+
+
 
 local RvRegisterElements
 
