@@ -17,15 +17,8 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ]]
 
--- RISC-V 32-Bit Emulator for The Powder Toy
+-- RISC-V 32-Bit Emulator for 'The Powder Toy'
 
--- temp  : not allocated
--- ctype : instance id, if any negative value, cpu is halted.
--- life  : status of cpu, if it have any negative value, then cpu is not initialized.
--- tmp   : not allocated
--- tmp2  : not allocated
--- tmp3  : not allocated
--- tmp4  : not allocated
 
 -- source by LBPHacker
 -- License: Do Whatever You Want With It 42.0™
@@ -72,11 +65,11 @@ local function RvCreateInstance (instanceId)
 		}
 	}
 	RvCtxMem[instanceId] = {}
-	RvCtxMem[instanceId].Data = {0x00108093}
+	RvCtxMem[instanceId].Data = {} -- {0x00108093}
 
 	setmetatable(RvCtxMem[instanceId].Data, { __index = function(self) return 0 end })
 
-	return true -- Non-error
+	return true
 end
 
 local function RvDeleteInstance (instanceId)
@@ -92,7 +85,7 @@ local function RvDeleteInstance (instanceId)
 end
 
 
-
+--[[
 local function RvAccessMemory (ctx, addr, accessType, data)
 	local retval = 0
 
@@ -111,33 +104,113 @@ local function RvAccessMemory (ctx, addr, accessType, data)
 
 	return bit.band(retval, 0xFFFFFFFF)
 end
+]]
 
-
-local function RvReadMemory (ctx, adr, mod)
+local function RvMemoryAccess (ctx, adr, mod, val)
 	local retval = 0
 
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
 
-	local opTab = {
-		function () offset = bit.band(adr, 3) return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), offset) end,
-		function () offset = bit.rshift(bit.band(adr, 3), 1) return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16)), offset) end,
-		function () return RvCtxMem[ctx.conf.selfId].Data[ea] end,
+	local rdOpTab = {
+		-- LB
+		function ()
+			offset = bit.band(adr, 3)
+			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8))
+		end,
+		-- LH
+		function ()
+			offset = bit.rshift(bit.band(adr, 3), 1)
+			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
+		end,
+		-- LW
+		function ()
+			return RvCtxMem[ctx.conf.selfId].Data[ea]
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- LBU
+		function ()
+			offset = bit.band(adr, 3)
+			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), offset)
+		end,
+		-- LHU
+		function ()
+			offset = bit.rshift(bit.band(adr, 3), 1)
+			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+	}
+
+	local wrOpTab = {
+		-- SB
+		function ()
+			offset = bit.band(adr, 3)
+			local maskBit = bit.lshift(0xFF, offset * 8)
+			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].Data[ea], maskBit), bit.band(val, maskBit))
+			return true
+		end,
+		-- SH
+		function ()
+			offset = bit.rshift(bit.band(adr, 3), 1)
+			local maskBit = bit.lshift(0xFFFF, offset * 16)
+			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].Data[ea], maskBit), bit.band(val, maskBit))
+			return true
+		end,
+		-- SW
+		function ()
+			RvCtxMem[ctx.conf.selfId].Data[ea] = val
+			return true
+		end,
+		-- none
 		function () return nil end,
-		function () offset = bit.band(adr, 3) return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8)) end,
-		function () offset = bit.rshift(bit.band(adr, 3), 1) return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16) end,
+		-- none
 		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
 		function () return nil end,
 	}
 
-	local func = opTab[mod + 1]
+	local func
+
+	if val == nil then
+		func = rdOpTab[mod]
+	else
+		func = wrOpTab
+	end
+
+	if func == nil then return nil end
+	return func()
+end
+
+local function RvWriteMemory (ctx, adr, mod, val)
+	local retval = 0
+
+	local ea = bit.rshift(adr, 2) + 1
+	local offset = 0
+
+
+
+	local func = WrOpTab[mod]
 	if func == nil then return nil end
 	return func()
 end
 
 local function RvFetchInstruction (ctx)
-	local instruction = RvReadMemory(ctx, ctx.regs.pc, 2)
-	-- ctx.regs.pc = ctx.regs.pc + 4 // for debug!
+	local instruction = RvMemoryAccess(ctx, ctx.regs.pc, 3)
+	ctx.regs.pc = ctx.regs.pc + 4
 	return instruction
 end
 
@@ -153,11 +226,57 @@ local function RvDecode (ctx)
 		return
 	end
 
+	local function decVal4_2 () return bit.rshift(bit.band(inst, 0x1C), 2) + 1 end
+
+	local function decVal6_5 () return bit.rshift(bit.band(inst, 0x60), 5) + 1 end
+
+	local function decValFnt3 () return bit.rshift(bit.band(inst, 0x7000), 12) + 1 end
+
+
 	local decTab4_2 = {
-		function () end,
-		function () end,
-		function () end,
-		function () end,
+		function ()
+			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
+			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
+			local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
+
+			local decTab6_5 = {
+				function ()
+					-- LB/LH/LW/LBU/LHU
+					if rd ~= 1 then
+						ctx.regs.gp[rd] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm12, decValFnt3())
+					end
+
+					if ctx.regs.gp[rd] == nil then
+						RvThrowException("RvDecode: RvReadMemory returns nil value.")
+						return nil
+					end
+				end,
+				function ()
+					local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20)
+					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
+					return RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+			}
+
+			local func = decTab6_5[decVal6_5()]
+			if func == nil then return nil end
+			return func()
+		end,
+		function ()
+			return nil
+		end,
+		function ()
+			return nil
+		end,
+		function ()
+			return nil
+		end,
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
 			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
@@ -168,27 +287,66 @@ local function RvDecode (ctx)
 
 					local decTabFnt3 = {
 						-- ADDI
-						function () ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFF) end,
+						function ()
+							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFF)
+						end,
 						-- SLLI
-						function () if bit.rshift(bit.band(imm, 0xFE0), 5) ~= 0 then ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], shamt), 0xFFFFFFFF) else return true end end,
+						function ()
+							if bit.rshift(bit.band(imm, 0xFE0), 5) ~= 0 then
+								ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], shamt), 0xFFFFFFFF)
+							else
+								return true
+							end
+						end,
 						-- SLTI
-						function () if ctx.regs.gp[rs1] < imm then ctx.regs.gp[rd] = 1 else ctx.regs.gp[rd] = 0 end end,
+						function ()
+							if ctx.regs.gp[rs1] < imm then
+								ctx.regs.gp[rd] = 1
+							else
+								ctx.regs.gp[rd] = 0
+							end
+						end,
 						-- SLTIU
-						function () if ctx.regs.gp[rs1] < bit.band(imm, 0xFFF) then ctx.regs.gp[rd] = 1 else ctx.regs.gp[rd] = 0 end end,
+						function ()
+							if ctx.regs.gp[rs1] < bit.band(imm, 0xFFF) then
+								ctx.regs.gp[rd] = 1
+							else
+								ctx.regs.gp[rd] = 0
+							end
+						end,
 						-- XORI
-						function () ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], imm) end,
+						function ()
+							ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], imm)
+						end,
 						-- SRLI/SRAI
-						function () local imm11_5 = bit.band(imm, 0xFE0) local op if imm11_5 == 0 then op = bit.rshift elseif imm11_5 ~= 0 then op = bit.arshift end ctx.regs.gp[rd] = op(ctx.regs[rs1], shamt) end,
+						function ()
+							local imm11_5 = bit.band(imm, 0xFE0)
+							local op
+							if imm11_5 == 0 then
+								op = bit.rshift
+							elseif imm11_5 ~= 0 then
+								op = bit.arshift
+							end
+
+							ctx.regs.gp[rd] = op(ctx.regs[rs1], shamt)
+						end,
 						-- ORI
-						function () ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], imm) end,
+						function ()
+							ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], imm)
+						end,
 						-- ANDI
-						function () ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], imm) end
+						function ()
+							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], imm)
+						end
 					}
 
-					local func = decTabFnt3[bit.rshift(bit.band(inst, 0x7000), 12) + 1]
+					local func = decTabFnt3[decValFnt3()]
 					if func == nil then return false end
 					local retval = func()
+
+					-- register number 0 is always zero
 					ctx.regs.gp[1] = 0
+
 					return retval
 				end,
 				function ()
@@ -197,46 +355,108 @@ local function RvDecode (ctx)
 
 					local decTabFnt3 = {
 						-- ADD/SUB
-						function () local op if fnt7 == 0 then ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + ctx.regs.gp[rs2], 0xFFFFFFFF) elseif fnt7 ~= 0 then ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] - ctx.regs.gp[rs2], 0xFFFFFFFF) end end,
+						function ()
+							local op
+
+							if fnt7 == 0 then
+								ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + ctx.regs.gp[rs2], 0xFFFFFFFF)
+							elseif fnt7 ~= 0 then
+								ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] - ctx.regs.gp[rs2], 0xFFFFFFFF)
+							end
+
+							return true
+						end,
 						-- SLL
-						function () ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], ctx.regs.gp[rs2])) end,
+						function ()
+							ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], ctx.regs.gp[rs2]))
+
+							return true
+						end,
 						-- SLT
-						function () if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then ctx.regs.gp[rd] = 1 else ctx.regs.gp[rd] = 0 end end,
+						function ()
+							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
+								ctx.regs.gp[rd] = 1
+							else
+								ctx.regs.gp[rd] = 0
+							end
+
+							return true
+						end,
 						-- SLTU
-						function () if ctx.regs.gp[rs1] < bit.band(ctx.regs.gp[rs2], 0xFFF) then ctx.regs.gp[rd] = 1 else ctx.regs.gp[rd] = 0 end end,
+						function ()
+							if ctx.regs.gp[rs1] < bit.band(ctx.regs.gp[rs2], 0xFFF) then
+								ctx.regs.gp[rd] = 1
+							else
+								ctx.regs.gp[rd] = 0
+							end
+
+							return true
+						end,
 						-- XOR
-						function () ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], ctx.regs.gp[rs2]) end,
+						function ()
+							ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							return true
+						end,
 						-- SRL/SRA
-						function () local op if fnt7 == 0 then op = bit.rshift elseif fnt7 ~= 0 then op = bit.arshift end ctx.regs.gp[rd] = op(ctx.regs.gp[rs1], ctx.regs.gp[rs2]) end,
+						function ()
+							local op
+
+							if fnt7 == 0 then
+								op = bit.rshift
+							elseif fnt7 ~= 0 then
+								op = bit.arshift
+							end
+
+							ctx.regs.gp[rd] = op(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							return true
+						end,
 						-- OR
-						function () ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], ctx.regs.gp[rs2]) end,
+						function ()
+							ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							return true
+						end,
 						-- AND
-						function () ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], ctx.regs.gp[rs2]) end
+						function ()
+							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							return true
+						end
 					}
 
-					local func = decTabFnt3[bit.rshift(bit.band(inst, 0x7000), 12) + 1]
+					local func = decTabFnt3[decValFnt3()]
 					if func == nil then return false end
-					return fn()
+					local retval = func()
+
+					-- register number 0 is always zero
+					ctx.regs.gp[1] = 0
+
+					return retval
 				end,
 				function ()
-
+					return nil
 				end,
 				function ()
-
+					return nil
 				end
 			}
 
-			local func = decTab6_5[bit.rshift(bit.band(inst, 0x60), 5) + 1]
+			local func = decTab6_5[decVal6_5()]
 			if func == nil then return false end
 			return func()
 		end,
-		function () end,
-		function () end,
+		function ()
+			return nil
+		end,
+		function ()
+			return nil
+		end,
 		-- Not Supported other instruction length
-		function () return false end
+		function ()
+			RvThrwoException("RvDecode: Invalid instruction.")
+			return false
+		end
 	}
 
-	local func = decTab4_2[bit.rshift(bit.band(inst, 0x1C), 2) + 1]
+	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
 	return func()
 end
@@ -268,6 +488,13 @@ end)
 --					 0: processor is stoped. default is zero.
 -- any positive number: processor is initialized and in running state.
 
+-- temp  : if temperature is higher, cpu operation frequency is high
+-- ctype : instance id, if any negative value, cpu is halted.
+-- life  : status of cpu, if it have any negative value, then cpu is not initialized.
+-- tmp   : not allocated
+-- tmp2  : not allocated
+-- tmp3  : not allocated
+-- tmp4  : not allocated
 
 elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	local instanceId = tpt.get_property('ctype', x, y)
@@ -281,9 +508,11 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 
 	-- Debug
 	-- tpt.set_property('life', instanceId, x, y)
+	
+	local ctx = RvCtxCpu[instanceId]
 
-	for i = 1, RvCtxCpu[instanceId].conf.freq do
-		RvDecode(RvCtxCpu[instanceId])
+	for i = 1, ctx.conf.freq do
+		RvDecode(ctx)
 	end
 
 	return
