@@ -37,12 +37,17 @@ end
 
 local RvConstMaxMemWord = 65536 -- 256 kiB limit
 local RvConstMaxFreqMultiplier = 16666
+local RvConstMaxTemperature = 120.0
 local RvConstModIdent = "FREECOMPUTER"
 local RvCtxCpu = {}
 local RvCtxMem = {}
 
 local function RvThrowException (msg)
 	print(msg)
+end
+
+local function RvLoadTestProgram (instanceId)
+	RvCtxMem[instanceId].data = {0x00108093}
 end
 
 local function RvCreateInstance (instanceId)
@@ -65,9 +70,9 @@ local function RvCreateInstance (instanceId)
 		}
 	}
 	RvCtxMem[instanceId] = {}
-	RvCtxMem[instanceId].Data = {} -- {0x00108093}
+	RvCtxMem[instanceId].data = {} -- {0x00108093}
 
-	setmetatable(RvCtxMem[instanceId].Data, { __index = function(self) return 0 end })
+	setmetatable(RvCtxMem[instanceId].data, { __index = function(self) return 0 end })
 
 	return true
 end
@@ -94,10 +99,10 @@ local function RvAccessMemory (ctx, addr, accessType, data)
 
 	if accessType == 0 then
 		offset = bit.band(address, 3)
-		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset)), offset)
+		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset)), offset)
 	elseif accessType == 1 then
 		offset = bit.rshift(bit.band(address, 3), 1)
-		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset)), offset)
+		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset)), offset)
 	elseif accessType == 2 then
 		retval = RvCtxMem[ctx.conf.selfId].Data[ea]
 	end
@@ -116,16 +121,16 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		-- LB
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8))
+			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8))
 		end,
 		-- LH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
+			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
 		end,
 		-- LW
 		function ()
-			return RvCtxMem[ctx.conf.selfId].Data[ea]
+			return RvCtxMem[ctx.conf.selfId].data[ea]
 		end,
 		-- none
 		function ()
@@ -134,12 +139,12 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		-- LBU
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFF, offset * 8)), offset)
+			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), offset)
 		end,
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].Data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
+			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
 		end,
 		-- none
 		function ()
@@ -156,19 +161,19 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		function ()
 			offset = bit.band(adr, 3)
 			local maskBit = bit.lshift(0xFF, offset * 8)
-			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].Data[ea], maskBit), bit.band(val, maskBit))
+			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].data[ea], maskBit), bit.band(val, maskBit))
 			return true
 		end,
 		-- SH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
 			local maskBit = bit.lshift(0xFFFF, offset * 16)
-			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].Data[ea], maskBit), bit.band(val, maskBit))
+			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].data[ea], maskBit), bit.band(val, maskBit))
 			return true
 		end,
 		-- SW
 		function ()
-			RvCtxMem[ctx.conf.selfId].Data[ea] = val
+			RvCtxMem[ctx.conf.selfId].data[ea] = val
 			return true
 		end,
 		-- none
@@ -237,6 +242,7 @@ local function RvDecode (ctx)
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
 			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
+			local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20)
 			local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
 
 			local decTab6_5 = {
@@ -251,16 +257,74 @@ local function RvDecode (ctx)
 						return nil
 					end
 				end,
+				-- SB/SH/SW
 				function ()
-					local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20)
 					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
 					return RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
 				end,
 				function ()
 					return nil
 				end,
+				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
 				function ()
-					return nil
+					imm = bit.band(inst, 0x80000000)
+					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x80), 23))
+					imm = bit.bor(imm, bit.rshift(bit.band(inst, 0x7E000000), 1))
+					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0xF00), 12))
+					imm = bit.arshift(imm, 19)
+
+					local decTabFnt3 = {
+						-- BEQ
+						function ()
+							if ctx.regs.gp[rs1] == ctx.regs.gp[rs2] then
+								ctx.regs.pc = ctx.regs.pc + imm
+							end
+
+							return true
+						end,
+						-- BNE
+						function ()
+							if ctx.regs.gp[rs1] ~= ctx.regs.gp[rs2] then
+								ctx.regs.pc = ctx.regs.pc + imm
+							end
+
+							return true
+						end,
+						-- BLT
+						function ()
+							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
+								ctx.regs.pc = ctx.regs.pc + imm
+							end
+
+							return true
+						end,
+						-- BGE
+						function ()
+							if ctx.regs.gp[rs1] >= ctx.regs.gp[rs2] then
+								ctx.regs.pc = ctx.regs.pc + imm
+							end
+
+							return true
+						end,
+						-- BLTU
+						function ()
+
+						end,
+						-- BGEU
+						function ()
+
+						end,
+						-- none
+						function () return nil end,
+						-- none
+						function () return nil end,
+					}
+
+					local func = decTabFnt3[decValFnt3()]
+					if func == nil then return false end
+					local retval = func()
+
+					return retval
 				end,
 			}
 
@@ -479,18 +543,16 @@ elements.property(RvRegisterElements, "Advection", 1)
 elements.property(RvRegisterElements, "Weight", 0)
 elements.property(RvRegisterElements, "Diffusion", 0)
 
+elements.property(RvRegisterElements, "HighTemperature", 120.0 + 273.15)
+elements.property(RvRegisterElements, "HighTemperatureTransition", elements.DEFAULT_PT_BMTL)
+
 elements.property(RvRegisterElements, "Create", function (i, x, y, s, n)
 	tpt.set_property('ctype', 0, x, y)
 end)
 
--- life is processor state
--- any negative number: processor is ready to initialization.
---					 0: processor is stoped. default is zero.
--- any positive number: processor is initialized and in running state.
-
--- temp  : if temperature is higher, cpu operation frequency is high
+-- temp  : If the temperature is high, it means that the processor is operating at a high frequency.
 -- ctype : instance id, if any negative value, cpu is halted.
--- life  : status of cpu, if it have any negative value, then cpu is not initialized.
+-- life  : not allocated
 -- tmp   : not allocated
 -- tmp2  : not allocated
 -- tmp3  : not allocated
@@ -510,10 +572,14 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	-- tpt.set_property('life', instanceId, x, y)
 	
 	local ctx = RvCtxCpu[instanceId]
+	local freq = ctx.conf.freq
 
-	for i = 1, ctx.conf.freq do
+	for i = 1, freq do
 		RvDecode(ctx)
 	end
+
+	local temp = tpt.get_property('temp', x, y)
+	tpt.set_property('temp', temp + RvConstMaxFreqMultiplier * 0.002, x, y)
 
 	return
 end)
