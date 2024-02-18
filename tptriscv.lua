@@ -62,8 +62,8 @@ local function RvCreateInstance (instanceId)
 			freq = 1
 		},
 		stat = {
-			isHalted = false
-			isAligned = true
+			isHalted = false,
+			isAligned = true,
 		},
 		regs = {
 			gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -97,14 +97,12 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	local offset = 0
 
 	-- memory limit check
-	local rs1Value = ctx.regs.gp[rs1]
-
 	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RvConstMaxMemWord, 0x80000000)) == 0 then
 		if ea > RvConstMaxMemWord then
 			return nil
 		end
 	else
-		if rs1Value < imm then
+		if ea < RvConstMaxMemWord then
 			return nil
 		end
 	end
@@ -206,21 +204,6 @@ end
 
 ]]
 
-local function RvDecode (ctx)
-	local inst = RvFetchInstruction(ctx)
-	local retval
-
-	-- When instruction is C extension
-	if bit.band(inst, 3) ~= 3 then
-		retval = RvDecodeRV32C (ctx, inst)
-		retval = retval + RvDecodeRV32C (ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
-	else
-		retval = RvDecodeRV32I (ctx, inst)
-	end
-
-	return retval
-end
-
 local function RvDecodeRV32C (ctx, inst)
 	local function decVal1_0 ()
 		return bit.band(inst, 0x3) + 1
@@ -269,7 +252,7 @@ local function RvDecodeRV32C (ctx, inst)
 		function () end,
 	}
 
-	local func = decTab1_0[decVal4_2()]
+	local func = decTab1_0[decVal1_0()]
 	if func == nil then return false end
 	local retval = func()
 
@@ -703,7 +686,26 @@ local function RvDecodeRV32I (ctx, inst)
 	return func()
 end
 
+local function RvDecode (ctx)
+	local inst = RvFetchInstruction(ctx)
+	local retval1
+	local retval2
 
+	-- When instruction is C extension
+	if bit.band(inst, 3) ~= 3 then
+		retval1 = RvDecodeRV32C (ctx, inst)
+		retval2 = RvDecodeRV32C (ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
+		if retval1 == nil and retval2 == nil then
+			return nil
+		else
+			return false
+		end
+	else
+		retval1 = RvDecodeRV32I (ctx, inst)
+	end
+
+	return retval1
+end
 
 local RvRegisterElements
 
@@ -793,7 +795,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	end
 
 	local setErrorLevel = function (errNum)
-		if errnum < 0 then errnum = -errNum end
+		if errNum < 0 then errNum = -errNum end
 		tpt.set_property('life', -errNum, x, y)
 	end
 
