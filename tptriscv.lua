@@ -57,18 +57,11 @@ local function rv_throw (msg)
 	print(msg)
 end
 
-local function rv_load_test_code (instanceId)
-	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
-	rv.context.mem[instanceId].data[4097] = 0x6c6c6548
-	rv.context.mem[instanceId].data[4098] = 0x77202c6f
-	rv.context.mem[instanceId].data[4099] = 0x646c726f
-	rv.context.mem[instanceId].data[4100] = 0x00000a21
-	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
-end
+
 
 local function rv_new_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] ~= nil then
-		RvThrowException("RvNewCpuInstance: Instance id already in use.")
+		RvThrowException("rv_new_cpu_instance: Instance id already in use.")
 		return false
 	end
 
@@ -79,8 +72,9 @@ local function rv_new_cpu_instance (instanceId)
 			freq = 1
 		},
 		stat = {
-			isHalted = false,
-			isAligned = true,
+			is_halted = false,
+			is_aligned = true,
+			is_waiting = false,
 		},
 		regs = {
 			-- general-purpose register
@@ -95,7 +89,7 @@ end
 
 local function rv_new_mem_instance (instanceId)
 	if rv.context.mem[instanceId] ~= nil then
-		rv_throw("RvNewMemInstance: Instance id already in use.")
+		rv_throw("rv_new_mem_instance: Instance id already in use.")
 		return false
 	end
 
@@ -138,7 +132,7 @@ end
 
 local function rv_del_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] == nil then
-		RvThrowException("RvDelCpuInstance: Instance id already deleted.")
+		RvThrowException("rv_del_cpu_instance: Instance id already deleted.")
 		return false
 	end
 
@@ -149,7 +143,7 @@ end
 
 local function rv_del_mem_instance (instanceId)
 	if rv.context.mem[instanceId] == nil then
-		RvThrowException("RvDelMemInstance: Instance id already deleted.")
+		RvThrowException("rv_del_mem_instance: Instance id already deleted.")
 		return false
 	end
 
@@ -182,7 +176,7 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		ea = bit.rshift(ea, mem_ctx.debug.segment_size)
 		if val ~= nil and mem_ctx.debug.segment_map[ea] == true then
 			if mem_ctx.debug.panic_when_fault == true then
-				RvPanic()
+				rv_panic()
 			end
 		end
 	end
@@ -192,12 +186,12 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- LB
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), (3 - offset) * 8)
+			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), offset * 8)
 		end,
 		-- LH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
+			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
 		end,
 		-- LW
 		function ()
@@ -210,12 +204,14 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- LBU
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset)
+			tpt.log("memory_raw: " .. tostring(mem_ctx.data[ea]))
+			tpt.log("LB, pointer: " .. tostring(adr))
+			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
 		end,
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
+			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
 		end,
 		-- none
 		function ()
@@ -271,6 +267,17 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 	retval = func()
 
 	return retval
+end
+
+local function rv_load_test_code (instanceId)
+	local cpu_ctx = rv.context.cpu[instanceId]
+	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
+	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
+	rv_access_memory(cpu_ctx, 4096, 3, 0x6c6c6548)
+	rv_access_memory(cpu_ctx, 4100, 3, 0x77202c6f)
+	rv_access_memory(cpu_ctx, 4104, 3, 0x646c726f)
+	rv_access_memory(cpu_ctx, 4108, 3, 0x00000a21)
+	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
 end
 
 local function rv_fetch_instruction (cpu_ctx)
@@ -571,8 +578,8 @@ local function rv32i_decode (cpu_ctx, inst)
 		end,
 		-- ========== 100
 		function ()
-			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
-			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
+			local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
+			local rs1 = bit.rshift(bit.band(inst, 0x000F8000), 15) + 1
 			local decTab6_5 = {
 				-- ========== 00
 				function ()
@@ -582,11 +589,6 @@ local function rv32i_decode (cpu_ctx, inst)
 					local decTabFnt3 = {
 						-- ADDI
 						function ()
-							-- NOP
-							if rd - 1 == 0 and imm == 0 then
-								return true
-							end
-
 							cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1] + imm, 0xFFFFFFFF)
 						end,
 						-- SLLI
@@ -654,14 +656,12 @@ local function rv32i_decode (cpu_ctx, inst)
 				end,
 				-- ========== 01
 				function ()
-					local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20) + 1
+					local rs2 = bit.rshift(bit.band(inst, 0x01F00000), 20) + 1
 					local fnt7 = bit.rshift(bit.band(inst, 0xFE0000000), 29)
 
 					local decTabFnt3 = {
 						-- ADD/SUB
 						function ()
-							local op
-
 							if fnt7 == 0 then
 								cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1] + cpu_ctx.regs.gp[rs2], 0xFFFFFFFF)
 							elseif fnt7 ~= 0 then
@@ -793,7 +793,7 @@ local function rv32i_decode (cpu_ctx, inst)
 
 	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
-	--print("Debug Info, PC: " .. tostring(cpu_ctx.regs.pc))
+	print("Debug Info, PC: " .. tostring(cpu_ctx.regs.pc))
 	retval = func()
 
 	cpu_ctx.regs.gp[1] = 0
@@ -872,8 +872,10 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	local cpu_ctx = rv.context.cpu[instanceId]
 	local freq = cpu_ctx.conf.freq
 
-	for i = 1, freq do
-		rv_decode(cpu_ctx)
+	if not cpu_ctx.stat.is_waiting then
+		for i = 1, freq do
+			rv_decode(cpu_ctx)
+		end
 	end
 
 	--[[ What the fscking that?
