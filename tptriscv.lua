@@ -76,9 +76,14 @@ local function RvCreateInstance (instanceId)
 		}
 	}
 	RvCtxMem[instanceId] = {}
-	RvCtxMem[instanceId].data = {} -- {0x00108093}
+	local mem_ctx = RvCtxMem[instanceId]
+	mem_ctx.data = {} -- {0x00108093}
+	mem_ctx.conf = {
+		bit_width = 32
+		size = 65536
+	}
 
-	setmetatable(RvCtxMem[instanceId].data, { __index = function(self) return 0 end })
+	setmetatable(mem_ctx.data, { __index = function(self) return 0 end })
 
 	return true
 end
@@ -761,14 +766,16 @@ elements.property(RvRegisterElements, "Advection", 1)
 elements.property(RvRegisterElements, "Weight", 0)
 elements.property(RvRegisterElements, "Diffusion", 0)
 
+--[[ deprecated
 elements.property(RvRegisterElements, "HighTemperature", 4000.0 + 273.15)
 elements.property(RvRegisterElements, "HighTemperatureTransition", elements.DEFAULT_PT_BMTL)
+]]
 
 elements.property(RvRegisterElements, "Create", function (i, x, y, s, n)
 	tpt.set_property('ctype', 0, x, y)
 end)
 
--- temp  : If the temperature is high, it means that the processor is operating at a high frequency.
+-- temp  : not allocated
 -- ctype : instance id, if any negative value, cpu is halted.
 -- life  : not allocated
 -- tmp   : not allocated
@@ -796,8 +803,10 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		RvDecode(ctx)
 	end
 
+	--[[ What the fscking that?
 	local temp = tpt.get_property('temp', x, y)
 	tpt.set_property('temp', temp + ctx.conf.freq * 1.41, x, y)
+	]]
 
 	return
 end)
@@ -841,7 +850,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	local cfgOpTab = {
 		-- get the register value
 		function ()
-			local regNum = tpt.get_property('tmp4', x, y)
+			local regNum = tpt.get_property('tmp3', x, y)
 
 			local ctx = RvCtxCpu[id]
 			if ctx == nil then
@@ -849,17 +858,21 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 				return
 			end
 
+			local ret1
+
 			if regNum == 0 then
-				tpt.set_property('tmp', ctx.regs.pc, x, y)
+				ret1 = ctx.regs.pc
 			else
-				tpt.set_property('tmp', ctx.regs.gp[regNum], x, y)
+				ret1 = ctx.regs.gp[regNum]
 			end
 
-			tpt.set_property('tmp2', 0, x, y)
+			setReturn(ret1, 0)
+
+			return true
 		end,
 		-- set the register value
 		function ()
-			local regNum = tpt.get_property('tmp4', x, y)
+			local regNum = tpt.get_property('tmp3', x, y)
 
 			local ctx = RvCtxCpu[id]
 			if ctx == nil then
@@ -873,7 +886,9 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 				ctx.regs.gp[regNum] = bit.band(tpt.get_property('tmp', x, y))
 			end
 
-			tpt.set_property('tmp2', 0, x, y)
+			setReturn(0, 0)
+
+			return true
 		end,
 		-- get the current frequency
 		function ()
@@ -884,9 +899,9 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			end
 			ctx = RvCtxCpu[id]
 
-			tpt.set_property('tmp', ctx.conf.freq, x, y)
+			setReturn(ctx.conf.freq, 0)
 
-			tpt.set_property('tmp2', 0, x, y)
+			return true
 		end,
 		-- set the current frequency
 		function ()
@@ -897,15 +912,16 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			end
 			ctx = RvCtxCpu[id]
 
-			local newFreq = tpt.get_property('tmp4', x, y)
+			local newFreq = tpt.get_property('tmp3', x, y)
 			if newFreq > RvConstMaxFreqMultiplier then
 				setErrorLevel(1)
 				return
 			end
 
-			ctx.conf.freq = tpt.get_property('tmp4', x, y)
-			tpt.set_property('tmp', 0, x, y)
-			tpt.set_property('tmp2', 0, x, y)
+			ctx.conf.freq = newFreq
+			setReturn(0, 0)
+
+			return true
 		end,
 		-- (5) create instance
 		function ()
@@ -915,6 +931,8 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			else
 				setReturn(0, 0)
 			end
+
+			return true
 		end,
 		-- (6) delete instance
 		function ()
@@ -925,6 +943,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 				setReturn(0, 0)
 			end
 
+			return true
 		end,
 		-- (7) read memory
 		function ()
@@ -937,7 +956,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			end
 
 			setReturn(val, 0)
-			return
+			return true
 		end,
 		-- (8) write memory
 		function ()
@@ -947,12 +966,12 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			RvMemoryAccess(RvCtxCpu[id], adr, 3, val)
 
 			setReturn(0, 0)
-			return
+			return true
 		end,
 		-- (9) load test program
 		function ()
 			RvLoadTestCode(id)
-			return
+			return true
 		end,
 	}
 
@@ -962,7 +981,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	end
 
 	if func() == nil then
-		setErrorLevel(0)
+		setErrorLevel(1)
 	end
 
 	return
