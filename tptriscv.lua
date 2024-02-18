@@ -47,7 +47,12 @@ local function RvThrowException (msg)
 end
 
 local function RvLoadTestCode (instanceId)
-	RvCtxMem[instanceId].data = {0x00108093}
+	RvCtxMem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00030303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
+	RvCtxMem[instanceId].data[4097] = 0x6c6c6548
+	RvCtxMem[instanceId].data[4098] = 0x77202c6f
+	RvCtxMem[instanceId].data[4099] = 0x646c726f
+	RvCtxMem[instanceId].data[4100] = 0x00000a21
+	setmetatable(RvCtxMem[instanceId].data, { __index = function(self) return 0 end })
 end
 
 local function RvCreateInstance (instanceId)
@@ -91,7 +96,7 @@ local function RvDeleteInstance (instanceId)
 end
 
 local function RvMemoryAccess (ctx, adr, mod, val)
-	local retval = 0
+	local retval
 
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
@@ -112,7 +117,7 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		-- LB
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8))
+			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), (3 - offset) * 8)
 		end,
 		-- LH
 		function ()
@@ -184,17 +189,29 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	if val == nil then
 		func = rdOpTab[mod]
 	else
-		func = wrOpTab
+		func = wrOpTab[mod]
 	end
 
 	if func == nil then return nil end
-	return func()
+	retval = func()
+
+	if retval == nil then
+		print("RvMemoryAccess: read nil.")
+		print("Debug Info:")
+		print("adr: " .. tostring(adr))
+		print("mod: " .. tostring(mod))
+		print("ea: " .. tostring(ea))
+	end
+
+	return retval
 end
 
 local function RvFetchInstruction (ctx)
-	local instruction = RvMemoryAccess(ctx, ctx.regs.pc, 3)
+	return RvMemoryAccess(ctx, ctx.regs.pc, 3)
+end
+
+local function RvUpdatePc (ctx)
 	ctx.regs.pc = ctx.regs.pc + 4
-	return instruction
 end
 
 --[[
@@ -262,6 +279,8 @@ local function RvDecodeRV32C (ctx, inst)
 end
 
 local function RvDecodeRV32I (ctx, inst)
+	local retval
+
 	local function decVal4_2 ()
 		return bit.rshift(bit.band(inst, 0x1C), 2) + 1
 	end
@@ -286,7 +305,7 @@ local function RvDecodeRV32I (ctx, inst)
 				function ()
 					-- LB/LH/LW/LBU/LHU
 					if rd ~= 1 then
-						ctx.regs.gp[rd] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm12, decValFnt3())
+						ctx.regs.gp[rd] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3())
 					end
 
 					if ctx.regs.gp[rd] == nil then
@@ -305,16 +324,19 @@ local function RvDecodeRV32I (ctx, inst)
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
 				function ()
 					imm = bit.band(inst, 0x80000000)
-					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x80), 23))
 					imm = bit.bor(imm, bit.rshift(bit.band(inst, 0x7E000000), 1))
-					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0xF00), 12))
+					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000080), 23))
+					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000F00), 12))
+					if imm < 0 then
+						print("imm is correct")
+					end
 					imm = bit.arshift(imm, 19)
 
 					local decTabFnt3 = {
 						-- BEQ
 						function ()
 							if ctx.regs.gp[rs1] == ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + 4 + imm
+								ctx.regs.pc = ctx.regs.pc + imm
 							end
 
 							return true
@@ -322,7 +344,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BNE
 						function ()
 							if ctx.regs.gp[rs1] ~= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + 4 + imm
+								ctx.regs.pc = ctx.regs.pc + imm
 							end
 
 							return true
@@ -330,7 +352,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BLT
 						function ()
 							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + 4 + imm
+								ctx.regs.pc = ctx.regs.pc + imm
 							end
 
 							return true
@@ -338,7 +360,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BGE
 						function ()
 							if ctx.regs.gp[rs1] >= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + 4 + imm
+								ctx.regs.pc = ctx.regs.pc + imm
 							end
 
 							return true
@@ -351,11 +373,11 @@ local function RvDecodeRV32I (ctx, inst)
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
 							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + 4 + imm
+									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							else
 								if rs1Value > rs2Value then
-									ctx.regs.pc = ctx.regs.pc + 4 + imm
+									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							end
 
@@ -367,14 +389,14 @@ local function RvDecodeRV32I (ctx, inst)
 							local rs2Value = ctx.regs.gp[rs2]
 
 							if rs1Value == rs2Value then
-								ctx.regs.pc = ctx.regs.pc + 4 + imm
+								ctx.regs.pc = ctx.regs.pc + imm
 							elseif bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value >= rs2Value then
-									ctx.regs.pc = ctx.regs.pc + 4 + imm
+									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							else
 								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + 4 + imm
+									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							end
 
@@ -410,6 +432,7 @@ local function RvDecodeRV32I (ctx, inst)
 				function ()
 					return nil
 				end,
+				-- JALR
 				function ()
 					local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
 					local rs1 = bit.rshift(bit.band(inst, 0x000F8000), 15) + 1
@@ -419,11 +442,21 @@ local function RvDecodeRV32I (ctx, inst)
 						return nil
 					end
 
-					local address = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
-					ctx.regs.pc = bit.band(ctx.regs.pc + 4 + address, 0xFFFFFFFF)
-					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + 4, 0xFFFFFFFF)
+					local backup = ctx.regs.pc
+
+					ctx.regs.pc = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
+					ctx.regs.gp[rd] = backup
+					print("load where: " .. tostring(rs1))
+					print("JALR: backuped PC, value is " .. tostring(ctx.regs.gp[rd]))
+					print("backup where: " .. tostring(rd))
 				end,
 			}
+
+			local func = decTab6_5[decVal6_5()]
+			if func == nil then return false end
+			local retval = func()
+
+			return retval
 		end,
 		-- ========== 010
 		function ()
@@ -433,9 +466,9 @@ local function RvDecodeRV32I (ctx, inst)
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
 			local imm20 = bit.band(inst, 0x80000000)
-			imm20 = bit.bor(bit.rshift(bit.band(inst, 0x7FE00000)), 9)
-			imm20 = bit.bor(bit.lshift(bit.band(inst, 0x00100000)), 2)
-			imm20 = bit.bor(bit.lshift(bit.band(inst, 0x000FF000)), 11)
+			imm20 = bit.bor(imm20, bit.rshift(bit.band(inst, 0x7FE00000), 9))
+			imm20 = bit.bor(imm20, bit.lshift(bit.band(inst, 0x00100000), 2))
+			imm20 = bit.bor(imm20, bit.lshift(bit.band(inst, 0x000FF000), 11))
 			imm20 = bit.arshift(imm20, 11)
 
 			local decTab6_5 = {
@@ -448,11 +481,20 @@ local function RvDecodeRV32I (ctx, inst)
 				function ()
 					return nil
 				end,
+				-- JAL
 				function ()
-					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + 4, 0xFFFFFFFF)
+					print("imm20: " .. tostring(imm20))
+					ctx.regs.gp[rd] = ctx.regs.pc
 					ctx.regs.pc = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
+					print("JAL: backuped PC, value is " .. tostring(ctx.regs.gp[rd]))
+					print("backup where: " .. tostring(rd))
 				end,
 			}
+			local func = decTab6_5[decVal6_5()]
+			if func == nil then return false end
+			local retval = func()
+
+			return retval
 		end,
 		-- ========== 100
 		function ()
@@ -534,15 +576,13 @@ local function RvDecodeRV32I (ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					-- register number 0 is always zero
-					ctx.regs.gp[1] = 0
-
+					RvUpdatePc(ctx)
 					return retval
 				end,
 				-- ========== 01
 				function ()
 					local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20) + 1
-					local fnt7 = bit.rshift(bit.band(imm, 0xFE0), 25)
+					local fnt7 = bit.rshift(bit.band(inst, 0xFE0000000), 29)
 
 					local decTabFnt3 = {
 						-- ADD/SUB
@@ -624,9 +664,7 @@ local function RvDecodeRV32I (ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					-- register number 0 is always zero
-					ctx.regs.gp[1] = 0
-
+					RvUpdatePc(ctx)
 					return retval
 				end,
 				-- ========== 10
@@ -665,9 +703,8 @@ local function RvDecodeRV32I (ctx, inst)
 
 			local func = decTab6_5[decVal6_5()]
 			if func == nil then return false end
-			-- register number 0 is always zero
-			ctx.regs.gp[1] = 0
 
+			RvUpdatePc(ctx)
 			return func()
 		end,
 		-- ========== 110
@@ -683,7 +720,12 @@ local function RvDecodeRV32I (ctx, inst)
 
 	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
-	return func()
+	print("Debug Info:")
+	print("PC: " .. tostring(ctx.regs.pc))
+	retval = func()
+
+	ctx.regs.gp[1] = 0
+	return retval
 end
 
 local function RvDecode (ctx)
@@ -871,7 +913,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			tpt.set_property('tmp', 0, x, y)
 			tpt.set_property('tmp2', 0, x, y)
 		end,
-		-- create instance
+		-- (5) create instance
 		function ()
 			if not RvCreateInstance(id) then
 				setReturn(-1, -1)
@@ -880,7 +922,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 				setReturn(0, 0)
 			end
 		end,
-		-- delete instance
+		-- (6) delete instance
 		function ()
 			if not RvDeleteInstance(id) then
 				setReturn(-1, -1)
@@ -890,7 +932,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			end
 
 		end,
-		-- read memory
+		-- (7) read memory
 		function ()
 			local adr = tpt.get_property('tmp3', x, y)
 			local val = RvMemoryAccess(RvCtxCpu[id], adr, 3)
@@ -903,7 +945,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			setReturn(val, 0)
 			return
 		end,
-		-- write memory
+		-- (8) write memory
 		function ()
 			local adr = tpt.get_property('tmp3', x, y)
 			local val = tpt.get_property('tmp4', x, y)
@@ -913,7 +955,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			setReturn(0, 0)
 			return
 		end,
-		-- load test program
+		-- (9) load test program
 		function ()
 			RvLoadTestCode(id)
 			return
