@@ -292,6 +292,7 @@ local function RvDecodeRV32I (ctx, inst)
 	end
 
 	local decTab4_2 = {
+		-- ========== 000
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
 			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
@@ -330,7 +331,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BEQ
 						function ()
 							if ctx.regs.gp[rs1] == ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+								ctx.regs.pc = ctx.regs.pc + 4 + imm
 							end
 
 							return true
@@ -338,7 +339,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BNE
 						function ()
 							if ctx.regs.gp[rs1] ~= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+								ctx.regs.pc = ctx.regs.pc + 4 + imm
 							end
 
 							return true
@@ -346,7 +347,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BLT
 						function ()
 							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+								ctx.regs.pc = ctx.regs.pc + 4 + imm
 							end
 
 							return true
@@ -354,7 +355,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- BGE
 						function ()
 							if ctx.regs.gp[rs1] >= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+								ctx.regs.pc = ctx.regs.pc + 4 + imm
 							end
 
 							return true
@@ -367,11 +368,11 @@ local function RvDecodeRV32I (ctx, inst)
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
 							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+									ctx.regs.pc = ctx.regs.pc + 4 + imm
 								end
 							else
 								if rs1Value > rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+									ctx.regs.pc = ctx.regs.pc + 4 + imm
 								end
 							end
 
@@ -383,14 +384,14 @@ local function RvDecodeRV32I (ctx, inst)
 							local rs2Value = ctx.regs.gp[rs2]
 
 							if rs1Value == rs2Value then
-								ctx.regs.pc = ctx.regs.pc + imm
+								ctx.regs.pc = ctx.regs.pc + 4 + imm
 							elseif bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value >= rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+									ctx.regs.pc = ctx.regs.pc + 4 + imm
 								end
 							else
 								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+									ctx.regs.pc = ctx.regs.pc + 4 + imm
 								end
 							end
 
@@ -414,19 +415,68 @@ local function RvDecodeRV32I (ctx, inst)
 			if func == nil then return nil end
 			return func()
 		end,
+		-- ========== 001
+		function ()
+			local decTab6_5 = {
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
+					local rs1 = bit.rshift(bit.band(inst, 0x000F8000), 15) + 1
+					local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
+
+					if bit.band(inst, 0x00007000) ~= 0 then
+						return nil
+					end
+
+					local address = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
+					ctx.regs.pc = bit.band(ctx.regs.pc + 4 + address, 0xFFFFFFFF)
+					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + 4, 0xFFFFFFFF)
+				end,
+			}
+		end,
+		-- ========== 010
 		function ()
 			return nil
 		end,
+		-- ========== 011
 		function ()
-			return nil
+			local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
+			local imm20 = bit.band(inst, 0x80000000)
+			imm20 = bit.bor(bit.rshift(bit.band(inst, 0x7FE00000)), 9)
+			imm20 = bit.bor(bit.lshift(bit.band(inst, 0x00100000)), 2)
+			imm20 = bit.bor(bit.lshift(bit.band(inst, 0x000FF000)), 11)
+			imm20 = bit.arshift(imm20, 11)
+
+			local decTab6_5 = {
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + 4, 0xFFFFFFFF)
+					ctx.regs.pc = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
+				end,
+			}
 		end,
-		function ()
-			return nil
-		end,
+		-- ========== 100
 		function ()
 			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
 			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
 			local decTab6_5 = {
+				-- ========== 00
 				function ()
 					local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
 					local shamt = bit.band(imm, 0x1F)
@@ -434,6 +484,11 @@ local function RvDecodeRV32I (ctx, inst)
 					local decTabFnt3 = {
 						-- ADDI
 						function ()
+							-- NOP
+							if rd - 1 == imm then
+								return true
+							end
+
 							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFF)
 						end,
 						-- SLLI
@@ -501,6 +556,7 @@ local function RvDecodeRV32I (ctx, inst)
 
 					return retval
 				end,
+				-- ========== 01
 				function ()
 					local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20) + 1
 					local fnt7 = bit.rshift(bit.band(imm, 0xFE0), 25)
@@ -590,9 +646,11 @@ local function RvDecodeRV32I (ctx, inst)
 
 					return retval
 				end,
+				-- ========== 10
 				function ()
 					return nil
 				end,
+				-- ========== 11
 				function ()
 					return nil
 				end
@@ -602,15 +660,40 @@ local function RvDecodeRV32I (ctx, inst)
 			if func == nil then return false end
 			return func()
 		end,
+		-- ========== 101
+		function ()
+			local imm20 = bit.band(inst, 0xFFFFF000)
+			local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
+
+			local decTab6_5 = {
+				function ()
+					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
+				end,
+				function ()
+					ctx.regs.gp[rd] = imm20
+				end,
+				function ()
+					return nil
+				end,
+				function ()
+					return nil
+				end,
+			}
+
+			local func = decTab6_5[decVal6_5()]
+			if func == nil then return false end
+			-- register number 0 is always zero
+			ctx.regs.gp[1] = 0
+
+			return func()
+		end,
+		-- ========== 110
 		function ()
 			return nil
 		end,
+		-- ========== 111 Not Supported other instruction length
 		function ()
-			return nil
-		end,
-		-- Not Supported other instruction length
-		function ()
-			RvThrwoException("RvDecode: Invalid instruction.")
+			RvThrowException("RvDecode: Invalid instruction.")
 			return false
 		end
 	}
