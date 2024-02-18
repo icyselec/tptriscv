@@ -273,17 +273,17 @@ local function RvDecodeRV32C (ctx, inst)
 					ctx.regs.gp[rd_rs2] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3)
 				end,
 				-- C.FLW
-				function () end,
+				function () return nil end,
 				-- Reserved
 				function () return nil end,
 				-- C.FSD
-				function () end,
+				function () return nil end,
 				-- C.SW
 				function ()
 					RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3, ctx.regs.gp[rd_rs2])
 				end,
 				-- C.FSW
-				function () end,
+				function () return nil end,
 			}
 		end,
 		function () end,
@@ -387,9 +387,13 @@ local function RvDecodeRV32I (ctx, inst)
 
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
 							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
-								if rs1Value < rs2Value then ctx.regs.pc = ctx.regs.pc + imm end
+								if rs1Value < rs2Value then
+									ctx.regs.pc = ctx.regs.pc + imm
+								end
 							else
-								if not (rs1Value > rs2Value) then ctx.regs.pc = ctx.regs.pc + imm end
+								if not (rs1Value > rs2Value) then
+									ctx.regs.pc = ctx.regs.pc + imm
+								end
 							end
 
 							return true
@@ -471,10 +475,16 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- SLTIU
 						function ()
-							if ctx.regs.gp[rs1] < bit.band(imm, 0xFFF) then
-								ctx.regs.gp[rd] = 1
+							local rs1Value = ctx.regs.gp[rs1]
+
+							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(imm, 0x80000000)) == 0 then
+								if rs1Value < imm then
+									ctx.regs.gp[rd] = 1
+								end
 							else
-								ctx.regs.gp[rd] = 0
+								if not (rs1Value > imm) then
+									ctx.regs.gp[rd] = 0
+								end
 							end
 						end,
 						-- XORI
@@ -547,10 +557,17 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- SLTU
 						function ()
-							if ctx.regs.gp[rs1] < bit.band(ctx.regs.gp[rs2], 0xFFF) then
-								ctx.regs.gp[rd] = 1
+							local rs1Value = ctx.regs.gp[rs1]
+							local rs2Value = ctx.regs.gp[rs2]
+
+							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
+								if rs1Value < rs2Value then
+									ctx.regs.gp[rd] = 1
+								end
 							else
-								ctx.regs.gp[rd] = 0
+								if not (rs1Value > rs2Value) then
+									ctx.regs.gp[rd] = 0
+								end
 							end
 
 							return true
