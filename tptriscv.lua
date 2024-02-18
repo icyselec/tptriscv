@@ -79,14 +79,14 @@ local function RvCreateInstance (instanceId)
 	local mem_ctx = RvCtxMem[instanceId]
 	mem_ctx.data = {} -- {0x00108093}
 	mem_ctx.conf = {
-		bit_width = 32
+		bit_width = 32,
 		size = 65536 * 4
 	}
 
 	mem_ctx.debug = {
-		segmentation = false
-		segment_size = 32
-		panic_when_fault = false
+		segmentation = false,
+		segment_size = 32,
+		panic_when_fault = false,
 		segment_map = {}
 	}
 
