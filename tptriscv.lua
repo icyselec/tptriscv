@@ -382,11 +382,36 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BLTU
 						function ()
+							local rs1Value = ctx.regs.gp[rs1]
+							local rs2Value = ctx.regs.gp[rs2]
 
+							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
+							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
+								if rs1Value < rs2Value then ctx.regs.pc = ctx.regs.pc + imm end
+							else
+								if not (rs1Value > rs2Value) then ctx.regs.pc = ctx.regs.pc + imm end
+							end
+
+							return true
 						end,
 						-- BGEU
 						function ()
+							local rs1Value = ctx.regs.gp[rs1]
+							local rs2Value = ctx.regs.gp[rs2]
 
+							if rs1Value == rs2Value then
+								ctx.regs.pc = ctx.regs.pc + imm
+							elseif bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
+								if rs1Value >= rs2Value then
+									ctx.regs.pc = ctx.regs.pc + imm
+								end
+							else
+								if not (rs1Value >= rs2Value) then
+									ctx.regs.pc = ctx.regs.pc + imm
+								end
+							end
+
+							return true
 						end,
 						-- none
 						function () return nil end,
