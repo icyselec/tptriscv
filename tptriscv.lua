@@ -90,28 +90,6 @@ local function RvDeleteInstance (instanceId)
 	return true
 end
 
-
---[[
-local function RvAccessMemory (ctx, addr, accessType, data)
-	local retval = 0
-
-	local ea = bit.rshift(address, 2) + 1
-	local offset = 0
-
-	if accessType == 0 then
-		offset = bit.band(address, 3)
-		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset)), offset)
-	elseif accessType == 1 then
-		offset = bit.rshift(bit.band(address, 3), 1)
-		retval = bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset)), offset)
-	elseif accessType == 2 then
-		retval = RvCtxMem[ctx.conf.selfId].Data[ea]
-	end
-
-	return bit.band(retval, 0xFFFFFFFF)
-end
-]]
-
 local function RvMemoryAccess (ctx, adr, mod, val)
 	local retval = 0
 
