@@ -96,6 +96,20 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
 
+	-- memory limit check
+	local rs1Value = ctx.regs.gp[rs1]
+
+	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RvConstMaxMemWord, 0x80000000)) == 0 then
+		if ea > RvConstMaxMemWord then
+			return nil
+		end
+	else
+		if rs1Value < imm then
+			return nil
+		end
+	end
+
+
 	local rdOpTab = {
 		-- LB
 		function ()
@@ -175,19 +189,6 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		func = wrOpTab
 	end
 
-	if func == nil then return nil end
-	return func()
-end
-
-local function RvWriteMemory (ctx, adr, mod, val)
-	local retval = 0
-
-	local ea = bit.rshift(adr, 2) + 1
-	local offset = 0
-
-
-
-	local func = WrOpTab[mod]
 	if func == nil then return nil end
 	return func()
 end
@@ -369,7 +370,7 @@ local function RvDecodeRV32I (ctx, inst)
 									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							else
-								if not (rs1Value > rs2Value) then
+								if rs1Value > rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							end
@@ -388,7 +389,7 @@ local function RvDecodeRV32I (ctx, inst)
 									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							else
-								if not (rs1Value >= rs2Value) then
+								if rs1Value < rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
 								end
 							end
@@ -639,7 +640,7 @@ elements.property(RvRegisterElements, "Advection", 1)
 elements.property(RvRegisterElements, "Weight", 0)
 elements.property(RvRegisterElements, "Diffusion", 0)
 
-elements.property(RvRegisterElements, "HighTemperature", 120.0 + 273.15)
+elements.property(RvRegisterElements, "HighTemperature", 4000.0 + 273.15)
 elements.property(RvRegisterElements, "HighTemperatureTransition", elements.DEFAULT_PT_BMTL)
 
 elements.property(RvRegisterElements, "Create", function (i, x, y, s, n)
@@ -675,7 +676,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	end
 
 	local temp = tpt.get_property('temp', x, y)
-	tpt.set_property('temp', temp + RvConstMaxFreqMultiplier * 0.002, x, y)
+	tpt.set_property('temp', temp + ctx.conf.freq * 1.41, x, y)
 
 	return
 end)
@@ -701,8 +702,6 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 
 	if currentLife == 0 then -- no operation
 		return
-	elseif currentLife > 0 then
-		tpt.set_property('life', 0, x, y)
 	end
 
 	local setReturn = function (tmpOne, tmpTwo)
@@ -711,6 +710,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	end
 
 	local setErrorLevel = function (errNum)
+		if errnum < 0 then errnum = -errNum end
 		tpt.set_property('life', -errNum, x, y)
 	end
 
@@ -723,6 +723,10 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			local regNum = tpt.get_property('tmp4', x, y)
 
 			local ctx = RvCtxCpu[id]
+			if ctx == nil then
+				setErrorLevel(1)
+				return
+			end
 
 			if regNum == 0 then
 				tpt.set_property('tmp', ctx.regs.pc, x, y)
@@ -737,6 +741,11 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			local regNum = tpt.get_property('tmp4', x, y)
 
 			local ctx = RvCtxCpu[id]
+			if ctx == nil then
+				setErrorLevel(1)
+				return
+			end
+
 			if regNum == 0 then
 				ctx.regs.pc = bit.band(tpt.get_property('tmp', x, y))
 			else
@@ -749,7 +758,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		function ()
 			local ctx
 			if RvCtxCpu[id] == nil then
-				tpt.set_property('tmp', -1, x, y)
+				setErrorLevel(1)
 				return
 			end
 			ctx = RvCtxCpu[id]
@@ -762,14 +771,14 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		function ()
 			local ctx
 			if RvCtxCpu[id] == nil then
-				tpt.set_property('tmp', -1, x, y)
+				setErrorLevel(1)
 				return
 			end
 			ctx = RvCtxCpu[id]
 
 			local newFreq = tpt.get_property('tmp4', x, y)
 			if newFreq > RvConstMaxFreqMultiplier then
-				tpt.set_property('tmp', -1, x, y)
+				setErrorLevel(1)
 				return
 			end
 
@@ -781,6 +790,7 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		function ()
 			if not RvCreateInstance(id) then
 				setReturn(-1, -1)
+				setErrorLevel(1)
 			else
 				setReturn(0, 0)
 			end
@@ -789,10 +799,35 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		function ()
 			if not RvDeleteInstance(id) then
 				setReturn(-1, -1)
+				setErrorLevel(1)
 			else
 				setReturn(0, 0)
 			end
-		end
+
+		end,
+		-- read memory
+		function ()
+			local adr = tpt.get_property('tmp3', x, y)
+			local val = RvMemoryAccess(RvCtxCpu[id], adr, 3)
+
+			if val == nil then
+				RvThrowException("Configuration: RvMemoryAccess is failed to read.")
+				return
+			end
+
+			setReturn(val, 0)
+			return
+		end,
+		-- write memory
+		function ()
+			local adr = tpt.get_property('tmp3', x, y)
+			local val = tpt.get_property('tmp4', x, y)
+
+			RvMemoryAccess(RvCtxCpu[id], adr, 3, val)
+
+			setReturn(0, 0)
+			return
+		end,
 	}
 
 	local func = cfgOpTab[currentLife]
@@ -800,7 +835,9 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		setReturn(-1, -1)
 	end
 
-	func()
+	if func() == nil then
+		setErrorLevel(0)
+	end
 
 	return
 end)
