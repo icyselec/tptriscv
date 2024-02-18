@@ -195,14 +195,6 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	if func == nil then return nil end
 	retval = func()
 
-	if retval == nil then
-		print("RvMemoryAccess: read nil.")
-		print("Debug Info:")
-		print("adr: " .. tostring(adr))
-		print("mod: " .. tostring(mod))
-		print("ea: " .. tostring(ea))
-	end
-
 	return retval
 end
 
@@ -304,6 +296,7 @@ local function RvDecodeRV32I (ctx, inst)
 			local decTab6_5 = {
 				function ()
 					-- LB/LH/LW/LBU/LHU
+					RvUpdatePc(ctx)
 					if rd ~= 1 then
 						ctx.regs.gp[rd] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3())
 					end
@@ -315,6 +308,7 @@ local function RvDecodeRV32I (ctx, inst)
 				end,
 				-- SB/SH/SW
 				function ()
+					RvUpdatePc(ctx)
 					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
 					return RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
 				end,
@@ -327,9 +321,6 @@ local function RvDecodeRV32I (ctx, inst)
 					imm = bit.bor(imm, bit.rshift(bit.band(inst, 0x7E000000), 1))
 					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000080), 23))
 					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000F00), 12))
-					if imm < 0 then
-						print("imm is correct")
-					end
 					imm = bit.arshift(imm, 19)
 
 					local decTabFnt3 = {
@@ -337,33 +328,37 @@ local function RvDecodeRV32I (ctx, inst)
 						function ()
 							if ctx.regs.gp[rs1] == ctx.regs.gp[rs2] then
 								ctx.regs.pc = ctx.regs.pc + imm
+								return true
 							end
 
-							return true
+							return false
 						end,
 						-- BNE
 						function ()
 							if ctx.regs.gp[rs1] ~= ctx.regs.gp[rs2] then
 								ctx.regs.pc = ctx.regs.pc + imm
+								return true
 							end
 
-							return true
+							return false
 						end,
 						-- BLT
 						function ()
 							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
 								ctx.regs.pc = ctx.regs.pc + imm
+								return true
 							end
 
-							return true
+							return false
 						end,
 						-- BGE
 						function ()
 							if ctx.regs.gp[rs1] >= ctx.regs.gp[rs2] then
 								ctx.regs.pc = ctx.regs.pc + imm
+								return true
 							end
 
-							return true
+							return false
 						end,
 						-- BLTU
 						function ()
@@ -374,14 +369,16 @@ local function RvDecodeRV32I (ctx, inst)
 							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value < rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
+									return true
 								end
 							else
 								if rs1Value > rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
+									return true
 								end
 							end
 
-							return true
+							return false
 						end,
 						-- BGEU
 						function ()
@@ -393,14 +390,16 @@ local function RvDecodeRV32I (ctx, inst)
 							elseif bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
 								if rs1Value >= rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
+									return true
 								end
 							else
 								if rs1Value < rs2Value then
 									ctx.regs.pc = ctx.regs.pc + imm
+									return true
 								end
 							end
 
-							return true
+							return false
 						end,
 						-- none
 						function () return nil end,
@@ -411,6 +410,8 @@ local function RvDecodeRV32I (ctx, inst)
 					local func = decTabFnt3[decValFnt3()]
 					if func == nil then return false end
 					local retval = func()
+
+					if not retval then RvUpdatePc(ctx) end
 
 					return retval
 				end,
@@ -446,9 +447,6 @@ local function RvDecodeRV32I (ctx, inst)
 
 					ctx.regs.pc = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
 					ctx.regs.gp[rd] = backup
-					print("load where: " .. tostring(rs1))
-					print("JALR: backuped PC, value is " .. tostring(ctx.regs.gp[rd]))
-					print("backup where: " .. tostring(rd))
 				end,
 			}
 
@@ -483,11 +481,8 @@ local function RvDecodeRV32I (ctx, inst)
 				end,
 				-- JAL
 				function ()
-					print("imm20: " .. tostring(imm20))
-					ctx.regs.gp[rd] = ctx.regs.pc
+					ctx.regs.gp[rd] = ctx.regs.pc + 4
 					ctx.regs.pc = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
-					print("JAL: backuped PC, value is " .. tostring(ctx.regs.gp[rd]))
-					print("backup where: " .. tostring(rd))
 				end,
 			}
 			local func = decTab6_5[decVal6_5()]
@@ -510,7 +505,7 @@ local function RvDecodeRV32I (ctx, inst)
 						-- ADDI
 						function ()
 							-- NOP
-							if rd - 1 == imm then
+							if rd - 1 == 0 and imm == 0 then
 								return true
 							end
 
@@ -720,8 +715,7 @@ local function RvDecodeRV32I (ctx, inst)
 
 	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
-	print("Debug Info:")
-	print("PC: " .. tostring(ctx.regs.pc))
+	print("Debug Info, PC: " .. tostring(ctx.regs.pc))
 	retval = func()
 
 	ctx.regs.gp[1] = 0
