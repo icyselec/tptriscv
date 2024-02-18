@@ -46,7 +46,7 @@ local function RvThrowException (msg)
 	print(msg)
 end
 
-local function RvLoadTestProgram (instanceId)
+local function RvLoadTestCode (instanceId)
 	RvCtxMem[instanceId].data = {0x00108093}
 end
 
@@ -826,6 +826,11 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			RvMemoryAccess(RvCtxCpu[id], adr, 3, val)
 
 			setReturn(0, 0)
+			return
+		end,
+		-- load test program
+		function ()
+			RvLoadTestCode(id)
 			return
 		end,
 	}
