@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 -- RISC-V 32-Bit Emulator for 'The Powder Toy'
 
 
+-- It prevents access to undeclared or uninitialized variables and print the name of variable.
 -- source by LBPHacker
 -- License: Do Whatever You Want With It 42.0™
 do
@@ -46,6 +47,7 @@ rv.const.max_memory_word = 65536 -- 256 kiB limit
 rv.const.max_freq_multiplier = 1667
 rv.const.max_temperature = 120.0
 rv.const.mod_identify = "FREECOMPUTER"
+rv.const.extensions = {"RV32I"}
 rv.context.cpu = {}
 rv.context.mem = {}
 
@@ -61,20 +63,21 @@ end
 
 local function rv_new_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] ~= nil then
-		RvThrowException("rv_new_cpu_instance: Instance id already in use.")
+		rv_throw("rv_new_cpu_instance: Instance id already in use.")
 		return false
 	end
 
 	rv.context.cpu[instanceId] = {
 		conf = {
 			mem_id = instanceId,
-			-- frequency of operation per frame
-			freq = 1
+			freq = 1, -- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
+			exts = { "RV32I", "RV32C" }
 		},
 		stat = {
 			is_halted = false,
 			is_aligned = true,
 			is_waiting = false,
+			check_aligned = true
 		},
 		regs = {
 			-- general-purpose register
@@ -132,7 +135,7 @@ end
 
 local function rv_del_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] == nil then
-		RvThrowException("rv_del_cpu_instance: Instance id already deleted.")
+		rv_throw("rv_del_cpu_instance: Instance id already deleted.")
 		return false
 	end
 
@@ -143,7 +146,7 @@ end
 
 local function rv_del_mem_instance (instanceId)
 	if rv.context.mem[instanceId] == nil then
-		RvThrowException("rv_del_mem_instance: Instance id already deleted.")
+		rv_throw("rv_del_mem_instance: Instance id already deleted.")
 		return false
 	end
 
@@ -159,6 +162,10 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
+
+	local function report_error (cmd, msg)
+		rv_throw("rv_access_memory: " .. cmd .. " failed, " .. msg)
+	end
 
 	-- memory limit check
 	if bit.bxor(bit.band(ea, 0x80000000), bit.band(rv.const.max_memory_word, 0x80000000)) == 0 then
@@ -191,10 +198,27 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- LH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
+
+			if cpu_ctx.stat.check_aligned then
+				local sub_offset = bit.band(adr, 1)
+				if sub_offset ~= 0 then
+					report_error("LH", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
 			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
 		end,
 		-- LW
 		function ()
+			if cpu_ctx.stat.check_aligned then
+				offset = bit.band(adr, 3)
+				if offset ~= 0 then
+					report_error("LW", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
 			return mem_ctx.data[ea]
 		end,
 		-- none
@@ -204,13 +228,20 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- LBU
 		function ()
 			offset = bit.band(adr, 3)
-			tpt.log("memory_raw: " .. tostring(mem_ctx.data[ea]))
-			tpt.log("LB, pointer: " .. tostring(adr))
 			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
 		end,
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
+
+			if cpu_ctx.stat.check_aligned then
+				local sub_offset = bit.band(adr, 1)
+				if sub_offset ~= 0 then
+					report_error("LHU", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
 			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
 		end,
 		-- none
@@ -233,6 +264,14 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		end,
 		-- SH
 		function ()
+			if cpu_ctx.stat.check_aligned then
+				local sub_offset = bit.band(adr, 1)
+				if sub_offset ~= 0 then
+					report_error("SH", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
 			offset = bit.rshift(bit.band(adr, 3), 1)
 			local maskBit = bit.lshift(0xFFFF, offset * 16)
 			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], maskBit), bit.band(val, maskBit))
@@ -240,6 +279,14 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		end,
 		-- SW
 		function ()
+			if cpu_ctx.stat.check_aligned then
+				offset = bit.band(adr, 3)
+				if offset ~= 0 then
+					report_error("SW", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
 			mem_ctx.data[ea] = val
 			return true
 		end,
@@ -282,6 +329,11 @@ end
 
 local function rv_fetch_instruction (cpu_ctx)
 	return rv_access_memory(cpu_ctx, cpu_ctx.regs.pc, 3)
+end
+
+local function rv32c_update_pc (cpu_ctx)
+	cpu_ctx.regs.pc = cpu_ctx.regs.pc + 2
+	cpu_ctx.stat.check_aligned = false
 end
 
 local function rv32i_update_pc (cpu_ctx)
@@ -793,7 +845,6 @@ local function rv32i_decode (cpu_ctx, inst)
 
 	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
-	print("Debug Info, PC: " .. tostring(cpu_ctx.regs.pc))
 	retval = func()
 
 	cpu_ctx.regs.gp[1] = 0
