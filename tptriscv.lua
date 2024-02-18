@@ -36,7 +36,7 @@ do
 end
 
 local RvConstMaxMemWord = 65536 -- 256 kiB limit
-local RvConstMaxFreqMultiplier = 16666
+local RvConstMaxFreqMultiplier = 1667
 local RvConstMaxTemperature = 120.0
 local RvConstModIdent = "FREECOMPUTER"
 local RvCtxCpu = {}
@@ -80,10 +80,33 @@ local function RvCreateInstance (instanceId)
 	mem_ctx.data = {} -- {0x00108093}
 	mem_ctx.conf = {
 		bit_width = 32
-		size = 65536
+		size = 65536 * 4
 	}
 
+	mem_ctx.debug = {
+		segmentation = false
+		segment_size = 32
+		panic_when_fault = false
+		segment_map = {}
+	}
+
+	setmetatable(mem_ctx.debug.segment_map, { __index = function(self) return 0 end })
+
 	setmetatable(mem_ctx.data, { __index = function(self) return 0 end })
+
+	return true
+end
+
+local function RvPrintDebugInfo(id)
+	if RvCtxMem[id] == nil then
+		return false
+	end
+
+	local mem_ctx = RvCtxMem[id]
+	print("segmentation: " .. tostring(mem_ctx.debug.segmentation))
+	print("segment_size: " .. tostring(mem_ctx.debug.segment_size))
+	print("panic_when_fault: " .. tostring(mem_ctx.debug.panic_when_fault))
+	print("segment_map: " .. tostring(mem_ctx.debug.segment_map))
 
 	return true
 end
@@ -102,6 +125,7 @@ end
 
 local function RvMemoryAccess (ctx, adr, mod, val)
 	local retval
+	local mem_ctx = RvCtxMem[ctx.conf.selfId]
 
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
@@ -114,6 +138,16 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	else
 		if ea < RvConstMaxMemWord then
 			return nil
+		end
+	end
+
+	if mem_ctx.debug.segmentation == true then
+		local ea = bit.rshift(adr, 2)
+		ea = bit.rshift(ea, mem_ctx.debug.segment_size)
+		if val ~= nil and mem_ctx.debug.segment_map[ea] == true then
+			if mem_ctx.debug.panic_when_fault == true then
+				RvPanic()
+			end
 		end
 	end
 
@@ -973,6 +1007,38 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			RvLoadTestCode(id)
 			return true
 		end,
+		-- (10) get debug info
+		function ()
+			if not RvPrintDebugInfo(id) then
+				setErrorLevel(1)
+			end
+
+			setReturn(0, 0)
+		end,
+		-- (11) toggle debugging segmentation
+		function ()
+			RvCtxMem[id].debug.segmentation = bit.bxor(RvCtxMem[id].debug.segmentation, 1)
+			setReturn(0, 0)
+			return true
+		end,
+		-- (12) set or unset write protection on selected segment
+		function ()
+			local mem_ctx = RvCtxMem[id]
+			local pos = tpt.get_property('tmp3', x, y)
+			local val = tpt.get_property('tmp4', x, y)
+
+			if val == 0 then
+				val = false
+			else
+				val = true
+			end
+
+			mem_ctx.debug.segment_map[pos] = val
+
+			setReturn(0, 0)
+			return true
+		end
+
 	}
 
 	local func = cfgOpTab[currentLife]
