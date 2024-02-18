@@ -35,35 +35,47 @@ do
 	setfenv(1, env)
 end
 
-local RvConstMaxMemWord = 65536 -- 256 kiB limit
-local RvConstMaxFreqMultiplier = 1667
-local RvConstMaxTemperature = 120.0
-local RvConstModIdent = "FREECOMPUTER"
-local RvCtxCpu = {}
-local RvCtxMem = {}
+-- created new namespace for code re-factoring
+local rv = {
+	const = {},
+	context = {},
+	decode = {}
+}
 
-local function RvThrowException (msg)
+rv.const.max_memory_word = 65536 -- 256 kiB limit
+rv.const.max_freq_multiplier = 1667
+rv.const.max_temperature = 120.0
+rv.const.mod_identify = "FREECOMPUTER"
+rv.context.cpu = {}
+rv.context.mem = {}
+
+local function rv_panic ()
+
+end
+
+local function rv_throw (msg)
 	print(msg)
 end
 
-local function RvLoadTestCode (instanceId)
-	RvCtxMem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00030303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
-	RvCtxMem[instanceId].data[4097] = 0x6c6c6548
-	RvCtxMem[instanceId].data[4098] = 0x77202c6f
-	RvCtxMem[instanceId].data[4099] = 0x646c726f
-	RvCtxMem[instanceId].data[4100] = 0x00000a21
-	setmetatable(RvCtxMem[instanceId].data, { __index = function(self) return 0 end })
+local function rv_load_test_code (instanceId)
+	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
+	rv.context.mem[instanceId].data[4097] = 0x6c6c6548
+	rv.context.mem[instanceId].data[4098] = 0x77202c6f
+	rv.context.mem[instanceId].data[4099] = 0x646c726f
+	rv.context.mem[instanceId].data[4100] = 0x00000a21
+	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
 end
 
-local function RvCreateInstance (instanceId)
-	if RvCtxCpu[instanceId] ~= nil then
-		RvThrowException("RvCreateInstance: Instance id already in use.")
+local function rv_new_cpu_instance (instanceId)
+	if rv.context.cpu[instanceId] ~= nil then
+		RvThrowException("RvNewCpuInstance: Instance id already in use.")
 		return false
 	end
 
-	RvCtxCpu[instanceId] = {
+	rv.context.cpu[instanceId] = {
 		conf = {
-			selfId = instanceId,
+			mem_id = instanceId,
+			-- frequency of operation per frame
 			freq = 1
 		},
 		stat = {
@@ -71,13 +83,25 @@ local function RvCreateInstance (instanceId)
 			isAligned = true,
 		},
 		regs = {
+			-- general-purpose register
 			gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+			-- program counter
 			pc = 0
 		}
 	}
-	RvCtxMem[instanceId] = {}
-	local mem_ctx = RvCtxMem[instanceId]
-	mem_ctx.data = {} -- {0x00108093}
+
+	return true
+end
+
+local function rv_new_mem_instance (instanceId)
+	if rv.context.mem[instanceId] ~= nil then
+		rv_throw("RvNewMemInstance: Instance id already in use.")
+		return false
+	end
+
+	rv.context.mem[instanceId] = {}
+	local mem_ctx = rv.context.mem[instanceId]
+	mem_ctx.data = {}
 	mem_ctx.conf = {
 		bit_width = 32,
 		size = 65536 * 4
@@ -97,12 +121,13 @@ local function RvCreateInstance (instanceId)
 	return true
 end
 
-local function RvPrintDebugInfo(id)
-	if RvCtxMem[id] == nil then
+
+local function rv_print_debug_info(id)
+	local mem_ctx = rv.context.mem[id]
+	if mem_ctx == nil then
 		return false
 	end
 
-	local mem_ctx = RvCtxMem[id]
 	print("segmentation: " .. tostring(mem_ctx.debug.segmentation))
 	print("segment_size: " .. tostring(mem_ctx.debug.segment_size))
 	print("panic_when_fault: " .. tostring(mem_ctx.debug.panic_when_fault))
@@ -111,32 +136,43 @@ local function RvPrintDebugInfo(id)
 	return true
 end
 
-local function RvDeleteInstance (instanceId)
-	if RvCtxCpu[instanceId] == nil then
-		RvThrowException("RvDeleteInstance: Instance id already deleted.")
+local function rv_del_cpu_instance (instanceId)
+	if rv.context.cpu[instanceId] == nil then
+		RvThrowException("RvDelCpuInstance: Instance id already deleted.")
 		return false
 	end
 
-	RvCtxMem[instanceId] = nil
-	RvCtxCpu[instanceId] = nil
+	rv.context.cpu[instanceId] = nil
 
 	return true
 end
 
-local function RvMemoryAccess (ctx, adr, mod, val)
+local function rv_del_mem_instance (instanceId)
+	if rv.context.mem[instanceId] == nil then
+		RvThrowException("RvDelMemInstance: Instance id already deleted.")
+		return false
+	end
+
+	-- Actually, I know the order of releasing the memory, but even if I do this, they'll take care of it, right?
+	rv.context.mem[instanceId] = nil
+
+	return true
+end
+
+local function rv_access_memory (cpu_ctx, adr, mod, val)
 	local retval
-	local mem_ctx = RvCtxMem[ctx.conf.selfId]
+	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
 
 	local ea = bit.rshift(adr, 2) + 1
 	local offset = 0
 
 	-- memory limit check
-	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RvConstMaxMemWord, 0x80000000)) == 0 then
-		if ea > RvConstMaxMemWord then
+	if bit.bxor(bit.band(ea, 0x80000000), bit.band(rv.const.max_memory_word, 0x80000000)) == 0 then
+		if ea > rv.const.max_memory_word then
 			return nil
 		end
 	else
-		if ea < RvConstMaxMemWord then
+		if ea < rv.const.max_memory_word then
 			return nil
 		end
 	end
@@ -156,16 +192,16 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		-- LB
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), (3 - offset) * 8)
+			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), (3 - offset) * 8)
 		end,
 		-- LH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.arshift(bit.lshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
+			return bit.arshift(bit.lshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16))), (1 - offset) * 16)
 		end,
 		-- LW
 		function ()
-			return RvCtxMem[ctx.conf.selfId].data[ea]
+			return mem_ctx.data[ea]
 		end,
 		-- none
 		function ()
@@ -174,12 +210,12 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		-- LBU
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFF, offset * 8)), offset)
+			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset)
 		end,
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.rshift(bit.band(RvCtxMem[ctx.conf.selfId].data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
+			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), offset)
 		end,
 		-- none
 		function ()
@@ -196,19 +232,19 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 		function ()
 			offset = bit.band(adr, 3)
 			local maskBit = bit.lshift(0xFF, offset * 8)
-			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].data[ea], maskBit), bit.band(val, maskBit))
+			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], maskBit), bit.band(val, maskBit))
 			return true
 		end,
 		-- SH
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
 			local maskBit = bit.lshift(0xFFFF, offset * 16)
-			RvCtxMem[ctx.conf.selfId].Data[ea] = bit.bor(bit.bxor(RvCtxMem[ctx.conf.selfId].data[ea], maskBit), bit.band(val, maskBit))
+			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], maskBit), bit.band(val, maskBit))
 			return true
 		end,
 		-- SW
 		function ()
-			RvCtxMem[ctx.conf.selfId].data[ea] = val
+			mem_ctx.data[ea] = val
 			return true
 		end,
 		-- none
@@ -237,12 +273,12 @@ local function RvMemoryAccess (ctx, adr, mod, val)
 	return retval
 end
 
-local function RvFetchInstruction (ctx)
-	return RvMemoryAccess(ctx, ctx.regs.pc, 3)
+local function rv_fetch_instruction (cpu_ctx)
+	return rv_access_memory(cpu_ctx, cpu_ctx.regs.pc, 3)
 end
 
-local function RvUpdatePc (ctx)
-	ctx.regs.pc = ctx.regs.pc + 4
+local function rv32i_update_pc (cpu_ctx)
+	cpu_ctx.regs.pc = cpu_ctx.regs.pc + 4
 end
 
 --[[
@@ -252,7 +288,7 @@ end
 
 ]]
 
-local function RvDecodeRV32C (ctx, inst)
+local function rv32c_decode (cpu_ctx, inst)
 	local function decVal1_0 ()
 		return bit.band(inst, 0x3) + 1
 	end
@@ -280,7 +316,7 @@ local function RvDecodeRV32C (ctx, inst)
 				function () return nil end, -- Not usable
 				-- C.LW
 				function ()
-					ctx.regs.gp[rd_rs2] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3)
+					cpu_ctx.regs.gp[rd_rs2] = rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3)
 				end,
 				-- C.FLW
 				function () return nil end,
@@ -290,7 +326,7 @@ local function RvDecodeRV32C (ctx, inst)
 				function () return nil end,
 				-- C.SW
 				function ()
-					RvMemoryAccess(ctx, ctx.regs.gp[rs1] + uimm, 3, ctx.regs.gp[rd_rs2])
+					rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3, cpu_ctx.regs.gp[rd_rs2])
 				end,
 				-- C.FSW
 				function () return nil end,
@@ -305,11 +341,11 @@ local function RvDecodeRV32C (ctx, inst)
 	local retval = func()
 
 	-- register number 0 is always zero
-	ctx.regs.gp[1] = 0
+	cpu_ctx.regs.gp[1] = 0
 	return func()
 end
 
-local function RvDecodeRV32I (ctx, inst)
+local function rv32i_decode (cpu_ctx, inst)
 	local retval
 
 	local function decVal4_2 ()
@@ -335,28 +371,31 @@ local function RvDecodeRV32I (ctx, inst)
 			local decTab6_5 = {
 				function ()
 					-- LB/LH/LW/LBU/LHU
-					RvUpdatePc(ctx)
+					rv32i_update_pc(cpu_ctx)
 					if rd ~= 1 then
-						ctx.regs.gp[rd] = RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3())
+						cpu_ctx.regs.gp[rd] = rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3())
 					end
 
-					if ctx.regs.gp[rd] == nil then
-						RvThrowException("RvDecode: RvReadMemory returns nil value.")
+					if cpu_ctx.regs.gp[rd] == nil then
+						rv_throw("rv32i_decode: rv_access_memory returns nil value.")
 						return nil
 					end
 				end,
 				-- SB/SH/SW
 				function ()
-					RvUpdatePc(ctx)
+					rv32i_update_pc(cpu_ctx)
 					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
-					return RvMemoryAccess(ctx, ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
+					return rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
 				end,
 				function ()
 					return nil
 				end,
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
 				function ()
-					imm = bit.band(inst, 0x80000000)
+					local rs1_value = cpu_ctx.regs.gp[rs1]
+					local rs2_value = cpu_ctx.regs.gp[rs2]
+
+					local imm = bit.band(inst, 0x80000000)
 					imm = bit.bor(imm, bit.rshift(bit.band(inst, 0x7E000000), 1))
 					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000080), 23))
 					imm = bit.bor(imm, bit.lshift(bit.band(inst, 0x00000F00), 12))
@@ -365,8 +404,8 @@ local function RvDecodeRV32I (ctx, inst)
 					local decTabFnt3 = {
 						-- BEQ
 						function ()
-							if ctx.regs.gp[rs1] == ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+							if rs1_value == rs2_value then
+								cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 								return true
 							end
 
@@ -374,8 +413,8 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BNE
 						function ()
-							if ctx.regs.gp[rs1] ~= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+							if rs1_value ~= rs2_value then
+								cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 								return true
 							end
 
@@ -383,8 +422,8 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BLT
 						function ()
-							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+							if rs1_value < rs2_value then
+								cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 								return true
 							end
 
@@ -392,8 +431,8 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BGE
 						function ()
-							if ctx.regs.gp[rs1] >= ctx.regs.gp[rs2] then
-								ctx.regs.pc = ctx.regs.pc + imm
+							if rs1_value >= rs2_value then
+								cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 								return true
 							end
 
@@ -401,18 +440,18 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BLTU
 						function ()
-							local rs1Value = ctx.regs.gp[rs1]
-							local rs2Value = ctx.regs.gp[rs2]
+							local rs1_value = cpu_ctx.regs.gp[rs1]
+							local rs2_value = cpu_ctx.regs.gp[rs2]
 
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
-							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
-								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
+								if rs1_value < rs2Value then
+									cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 									return true
 								end
 							else
 								if rs1Value > rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+									cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 									return true
 								end
 							end
@@ -421,19 +460,19 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- BGEU
 						function ()
-							local rs1Value = ctx.regs.gp[rs1]
-							local rs2Value = ctx.regs.gp[rs2]
+							local rs1_value = cpu_ctx.regs.gp[rs1]
+							local rs2_value = cpu_ctx.regs.gp[rs2]
 
-							if rs1Value == rs2Value then
-								ctx.regs.pc = ctx.regs.pc + imm
-							elseif bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
-								if rs1Value >= rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+							if rs1_value == rs2_value then
+								cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
+							elseif bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
+								if rs1_value >= rs2_value then
+									cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 									return true
 								end
 							else
-								if rs1Value < rs2Value then
-									ctx.regs.pc = ctx.regs.pc + imm
+								if rs1_value < rs2_value then
+									cpu_ctx.regs.pc = cpu_ctx.regs.pc + imm
 									return true
 								end
 							end
@@ -450,7 +489,7 @@ local function RvDecodeRV32I (ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					if not retval then RvUpdatePc(ctx) end
+					if not retval then rv32i_update_pc(cpu_ctx) end
 
 					return retval
 				end,
@@ -482,10 +521,10 @@ local function RvDecodeRV32I (ctx, inst)
 						return nil
 					end
 
-					local backup = ctx.regs.pc
+					local backup = cpu_ctx.regs.pc
 
-					ctx.regs.pc = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
-					ctx.regs.gp[rd] = backup
+					cpu_ctx.regs.pc = bit.band(cpu_ctx.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
+					cpu_ctx.regs.gp[rd] = backup
 				end,
 			}
 
@@ -520,8 +559,8 @@ local function RvDecodeRV32I (ctx, inst)
 				end,
 				-- JAL
 				function ()
-					ctx.regs.gp[rd] = ctx.regs.pc + 4
-					ctx.regs.pc = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
+					cpu_ctx.regs.gp[rd] = cpu_ctx.regs.pc + 4
+					cpu_ctx.regs.pc = bit.band(cpu_ctx.regs.pc + imm20, 0xFFFFFFFF)
 				end,
 			}
 			local func = decTab6_5[decVal6_5()]
@@ -548,41 +587,41 @@ local function RvDecodeRV32I (ctx, inst)
 								return true
 							end
 
-							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + imm, 0xFFFFFFFF)
+							cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1] + imm, 0xFFFFFFFF)
 						end,
 						-- SLLI
 						function ()
 							if bit.rshift(bit.band(imm, 0xFE0), 5) ~= 0 then
-								ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], shamt), 0xFFFFFFFF)
+								cpu_ctx.regs.gp[rd] = bit.band(bit.lshift(cpu_ctx.regs.gp[rs1], shamt), 0xFFFFFFFF)
 							else
 								return true
 							end
 						end,
 						-- SLTI
 						function ()
-							if ctx.regs.gp[rs1] < imm then
-								ctx.regs.gp[rd] = 1
+							if cpu_ctx.regs.gp[rs1] < imm then
+								cpu_ctx.regs.gp[rd] = 1
 							else
-								ctx.regs.gp[rd] = 0
+								cpu_ctx.regs.gp[rd] = 0
 							end
 						end,
 						-- SLTIU
 						function ()
-							local rs1Value = ctx.regs.gp[rs1]
+							local rs1_value = cpu_ctx.regs.gp[rs1]
 
-							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(imm, 0x80000000)) == 0 then
-								if rs1Value < imm then
-									ctx.regs.gp[rd] = 1
+							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(imm, 0x80000000)) == 0 then
+								if rs1_value < imm then
+									cpu_ctx.regs.gp[rd] = 1
 								end
 							else
-								if not (rs1Value > imm) then
-									ctx.regs.gp[rd] = 0
+								if not (rs1_value > imm) then
+									cpu_ctx.regs.gp[rd] = 0
 								end
 							end
 						end,
 						-- XORI
 						function ()
-							ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], imm)
+							cpu_ctx.regs.gp[rd] = bit.bxor(cpu_ctx.regs.gp[rs1], imm)
 						end,
 						-- SRLI/SRAI
 						function ()
@@ -594,15 +633,15 @@ local function RvDecodeRV32I (ctx, inst)
 								op = bit.arshift
 							end
 
-							ctx.regs.gp[rd] = op(ctx.regs[rs1], shamt)
+							cpu_ctx.regs.gp[rd] = op(cpu_ctx.regs[rs1], shamt)
 						end,
 						-- ORI
 						function ()
-							ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], imm)
+							cpu_ctx.regs.gp[rd] = bit.bor(cpu_ctx.regs.gp[rs1], imm)
 						end,
 						-- ANDI
 						function ()
-							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], imm)
+							cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1], imm)
 						end
 					}
 
@@ -610,7 +649,7 @@ local function RvDecodeRV32I (ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					RvUpdatePc(ctx)
+					rv32i_update_pc(cpu_ctx)
 					return retval
 				end,
 				-- ========== 01
@@ -624,41 +663,41 @@ local function RvDecodeRV32I (ctx, inst)
 							local op
 
 							if fnt7 == 0 then
-								ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] + ctx.regs.gp[rs2], 0xFFFFFFFF)
+								cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1] + cpu_ctx.regs.gp[rs2], 0xFFFFFFFF)
 							elseif fnt7 ~= 0 then
-								ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1] - ctx.regs.gp[rs2], 0xFFFFFFFF)
+								cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1] - cpu_ctx.regs.gp[rs2], 0xFFFFFFFF)
 							end
 
 							return true
 						end,
 						-- SLL
 						function ()
-							ctx.regs.gp[rd] = bit.band(bit.lshift(ctx.regs.gp[rs1], ctx.regs.gp[rs2]))
+							cpu_ctx.regs.gp[rd] = bit.band(bit.lshift(cpu_ctx.regs.gp[rs1], cpu_ctx.regs.gp[rs2]))
 
 							return true
 						end,
 						-- SLT
 						function ()
-							if ctx.regs.gp[rs1] < ctx.regs.gp[rs2] then
-								ctx.regs.gp[rd] = 1
+							if cpu_ctx.regs.gp[rs1] < cpu_ctx.regs.gp[rs2] then
+								cpu_ctx.regs.gp[rd] = 1
 							else
-								ctx.regs.gp[rd] = 0
+								cpu_ctx.regs.gp[rd] = 0
 							end
 
 							return true
 						end,
 						-- SLTU
 						function ()
-							local rs1Value = ctx.regs.gp[rs1]
-							local rs2Value = ctx.regs.gp[rs2]
+							local rs1_value = cpu_ctx.regs.gp[rs1]
+							local rs2_value = cpu_ctx.regs.gp[rs2]
 
-							if bit.bxor(bit.band(rs1Value, 0x80000000), bit.band(rs2Value, 0x80000000)) == 0 then
-								if rs1Value < rs2Value then
-									ctx.regs.gp[rd] = 1
+							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
+								if rs1_value < rs2_value then
+									cpu_ctx.regs.gp[rd] = 1
 								end
 							else
-								if not (rs1Value > rs2Value) then
-									ctx.regs.gp[rd] = 0
+								if not (rs1_value > rs2_value) then
+									cpu_ctx.regs.gp[rd] = 0
 								end
 							end
 
@@ -666,7 +705,7 @@ local function RvDecodeRV32I (ctx, inst)
 						end,
 						-- XOR
 						function ()
-							ctx.regs.gp[rd] = bit.bxor(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							cpu_ctx.regs.gp[rd] = bit.bxor(cpu_ctx.regs.gp[rs1], cpu_ctx.regs.gp[rs2])
 							return true
 						end,
 						-- SRL/SRA
@@ -679,17 +718,17 @@ local function RvDecodeRV32I (ctx, inst)
 								op = bit.arshift
 							end
 
-							ctx.regs.gp[rd] = op(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							cpu_ctx.regs.gp[rd] = op(cpu_ctx.regs.gp[rs1], cpu_ctx.regs.gp[rs2])
 							return true
 						end,
 						-- OR
 						function ()
-							ctx.regs.gp[rd] = bit.bor(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							cpu_ctx.regs.gp[rd] = bit.bor(cpu_ctx.regs.gp[rs1], cpu_ctx.regs.gp[rs2])
 							return true
 						end,
 						-- AND
 						function ()
-							ctx.regs.gp[rd] = bit.band(ctx.regs.gp[rs1], ctx.regs.gp[rs2])
+							cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.gp[rs1], cpu_ctx.regs.gp[rs2])
 							return true
 						end
 					}
@@ -698,7 +737,7 @@ local function RvDecodeRV32I (ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					RvUpdatePc(ctx)
+					rv32i_update_pc(cpu_ctx)
 					return retval
 				end,
 				-- ========== 10
@@ -722,10 +761,10 @@ local function RvDecodeRV32I (ctx, inst)
 
 			local decTab6_5 = {
 				function ()
-					ctx.regs.gp[rd] = bit.band(ctx.regs.pc + imm20, 0xFFFFFFFF)
+					cpu_ctx.regs.gp[rd] = bit.band(cpu_ctx.regs.pc + imm20, 0xFFFFFFFF)
 				end,
 				function ()
-					ctx.regs.gp[rd] = imm20
+					cpu_ctx.regs.gp[rd] = imm20
 				end,
 				function ()
 					return nil
@@ -738,7 +777,7 @@ local function RvDecodeRV32I (ctx, inst)
 			local func = decTab6_5[decVal6_5()]
 			if func == nil then return false end
 
-			RvUpdatePc(ctx)
+			rv32i_update_pc(cpu_ctx)
 			return func()
 		end,
 		-- ========== 110
@@ -747,65 +786,65 @@ local function RvDecodeRV32I (ctx, inst)
 		end,
 		-- ========== 111 Not Supported other instruction length
 		function ()
-			RvThrowException("RvDecode: Invalid instruction.")
+			rv_throw("rv32i_decode: Invalid instruction.")
 			return false
 		end
 	}
 
 	local func = decTab4_2[decVal4_2()]
 	if func == nil then return false end
-	print("Debug Info, PC: " .. tostring(ctx.regs.pc))
+	--print("Debug Info, PC: " .. tostring(cpu_ctx.regs.pc))
 	retval = func()
 
-	ctx.regs.gp[1] = 0
+	cpu_ctx.regs.gp[1] = 0
 	return retval
 end
 
-local function RvDecode (ctx)
-	local inst = RvFetchInstruction(ctx)
+local function rv_decode (cpu_ctx)
+	local inst = rv_fetch_instruction(cpu_ctx)
 	local retval1
 	local retval2
 
 	-- When instruction is C extension
 	if bit.band(inst, 3) ~= 3 then
-		retval1 = RvDecodeRV32C (ctx, inst)
-		retval2 = RvDecodeRV32C (ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
+		retval1 = rv32c_decode(cpu_ctx, inst)
+		retval2 = rv32c_decode(cpu_ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
 		if retval1 == nil and retval2 == nil then
 			return nil
 		else
 			return false
 		end
 	else
-		retval1 = RvDecodeRV32I (ctx, inst)
+		retval1 = rv32i_decode(cpu_ctx, inst)
 	end
 
 	return retval1
 end
 
-local RvRegisterElements
+local RVREGISTER
 
-RvRegisterElements = elements.allocate(RvConstModIdent, "CPU")
-elements.element(RvRegisterElements, elements.element(elements.DEFAULT_PT_ARAY))
-elements.property(RvRegisterElements, "Name", "CPU")
-elements.property(RvRegisterElements, "Description", "RISC-V 32-Bit CPU, RV32I set is being implemented.")
-elements.property(RvRegisterElements, "Colour", 0x6644FF)
-elements.property(RvRegisterElements, "MenuSection", elem.SC_ELEC)
-elements.property(RvRegisterElements, "Gravity", 0)
-elements.property(RvRegisterElements, "Flammable", 0)
-elements.property(RvRegisterElements, "Explosive", 0)
-elements.property(RvRegisterElements, "Loss", 0)
-elements.property(RvRegisterElements, "AirLoss", 1)
-elements.property(RvRegisterElements, "AirDrag", 0)
-elements.property(RvRegisterElements, "Advection", 1)
-elements.property(RvRegisterElements, "Weight", 0)
-elements.property(RvRegisterElements, "Diffusion", 0)
+RVREGISTER = elements.allocate(rv.const.mod_identify, "CPU")
+elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
+elements.property(RVREGISTER, "Name", "CPU")
+elements.property(RVREGISTER, "Description", "RISC-V 32-Bit CPU, RV32I set is being implemented.")
+elements.property(RVREGISTER, "Colour", 0x6644FF)
+elements.property(RVREGISTER, "MenuSection", elem.SC_ELEC)
+elements.property(RVREGISTER, "Gravity", 0)
+elements.property(RVREGISTER, "Flammable", 0)
+elements.property(RVREGISTER, "Explosive", 0)
+elements.property(RVREGISTER, "Loss", 0)
+elements.property(RVREGISTER, "AirLoss", 1)
+elements.property(RVREGISTER, "AirDrag", 0)
+elements.property(RVREGISTER, "Advection", 1)
+elements.property(RVREGISTER, "Weight", 0)
+elements.property(RVREGISTER, "Diffusion", 0)
 
 --[[ deprecated
 elements.property(RvRegisterElements, "HighTemperature", 4000.0 + 273.15)
 elements.property(RvRegisterElements, "HighTemperatureTransition", elements.DEFAULT_PT_BMTL)
 ]]
 
-elements.property(RvRegisterElements, "Create", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
 	tpt.set_property('ctype', 0, x, y)
 end)
 
@@ -817,12 +856,12 @@ end)
 -- tmp3  : not allocated
 -- tmp4  : not allocated
 
-elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	local instanceId = tpt.get_property('ctype', x, y)
 
 	if instanceId <= 0 then -- When processor is not active
 		return
-	elseif RvCtxCpu[instanceId] == nil then
+	elseif rv.context.cpu[instanceId] == nil then
 		tpt.set_property('ctype', -1, x, y) -- this instance id is not initialized or invalid.
 		return
 	end
@@ -830,11 +869,11 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	-- Debug
 	-- tpt.set_property('life', instanceId, x, y)
 	
-	local ctx = RvCtxCpu[instanceId]
-	local freq = ctx.conf.freq
+	local cpu_ctx = rv.context.cpu[instanceId]
+	local freq = cpu_ctx.conf.freq
 
 	for i = 1, freq do
-		RvDecode(ctx)
+		rv_decode(cpu_ctx)
 	end
 
 	--[[ What the fscking that?
@@ -845,26 +884,26 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	return
 end)
 
-RvRegisterElements = elements.allocate(RvConstModIdent, "CFG")
-elements.element(RvRegisterElements, elements.element(elements.DEFAULT_PT_ARAY))
-elements.property(RvRegisterElements, "Name", "CFG")
-elements.property(RvRegisterElements, "Description", "Configuration, check or set the instance state of Computer mod.")
-elements.property(RvRegisterElements, "Colour", 0x6644FF)
-elements.property(RvRegisterElements, "MenuSection", elem.SC_ELEC)
-elements.property(RvRegisterElements, "Gravity", 0)
-elements.property(RvRegisterElements, "Flammable", 0)
-elements.property(RvRegisterElements, "Explosive", 0)
-elements.property(RvRegisterElements, "Loss", 0)
-elements.property(RvRegisterElements, "AirLoss", 1)
-elements.property(RvRegisterElements, "AirDrag", 0)
-elements.property(RvRegisterElements, "Advection", 1)
-elements.property(RvRegisterElements, "Weight", 0)
-elements.property(RvRegisterElements, "Diffusion", 0)
+RVREGISTER = elements.allocate(rv.const.mod_identify, "CFG")
+elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
+elements.property(RVREGISTER, "Name", "CFG")
+elements.property(RVREGISTER, "Description", "Configuration, check or set the instance state of Computer mod.")
+elements.property(RVREGISTER, "Colour", 0x6644FF)
+elements.property(RVREGISTER, "MenuSection", elem.SC_ELEC)
+elements.property(RVREGISTER, "Gravity", 0)
+elements.property(RVREGISTER, "Flammable", 0)
+elements.property(RVREGISTER, "Explosive", 0)
+elements.property(RVREGISTER, "Loss", 0)
+elements.property(RVREGISTER, "AirLoss", 1)
+elements.property(RVREGISTER, "AirDrag", 0)
+elements.property(RVREGISTER, "Advection", 1)
+elements.property(RVREGISTER, "Weight", 0)
+elements.property(RVREGISTER, "Diffusion", 0)
 
-elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	local currentLife = tpt.get_property('life', x, y)
 
-	if currentLife == 0 then -- no operation
+	if currentLife <= 0 then -- no operation or error
 		return
 	end
 
@@ -882,12 +921,12 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 	local id = tpt.get_property('ctype', x, y)
 
 	local cfgOpTab = {
-		-- get the register value
+		-- (1) get the register value
 		function ()
 			local regNum = tpt.get_property('tmp3', x, y)
 
-			local ctx = RvCtxCpu[id]
-			if ctx == nil then
+			local cpu_ctx = rv.context.cpu[id]
+			if cpu_ctx == nil then
 				setErrorLevel(1)
 				return
 			end
@@ -895,73 +934,72 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			local ret1
 
 			if regNum == 0 then
-				ret1 = ctx.regs.pc
+				ret1 = cpu_ctx.regs.pc
 			else
-				ret1 = ctx.regs.gp[regNum]
+				ret1 = cpu_ctx.regs.gp[regNum]
 			end
 
 			setReturn(ret1, 0)
 
 			return true
 		end,
-		-- set the register value
+		-- (2) set the register value
 		function ()
 			local regNum = tpt.get_property('tmp3', x, y)
 
-			local ctx = RvCtxCpu[id]
-			if ctx == nil then
+			local cpu_ctx = rv.context.cpu[id]
+			if cpu_ctx == nil then
 				setErrorLevel(1)
 				return
 			end
 
 			if regNum == 0 then
-				ctx.regs.pc = bit.band(tpt.get_property('tmp', x, y))
+				cpu_ctx.regs.pc = bit.band(tpt.get_property('tmp', x, y))
 			else
-				ctx.regs.gp[regNum] = bit.band(tpt.get_property('tmp', x, y))
+				cpu_ctx.regs.gp[regNum] = bit.band(tpt.get_property('tmp', x, y))
 			end
 
 			setReturn(0, 0)
 
 			return true
 		end,
-		-- get the current frequency
+		-- (3) get the current frequency
 		function ()
-			local ctx
-			if RvCtxCpu[id] == nil then
+			local cpu_ctx = rv.context.cpu[id]
+			if cpu_ctx == nil then
 				setErrorLevel(1)
 				return
 			end
-			ctx = RvCtxCpu[id]
 
-			setReturn(ctx.conf.freq, 0)
+			setReturn(cpu_ctx.conf.freq, 0)
 
 			return true
 		end,
-		-- set the current frequency
+		-- (4) set the current frequency
 		function ()
-			local ctx
-			if RvCtxCpu[id] == nil then
+			local cpu_ctx = rv.context.cpu[id]
+			if cpu_ctx == nil then
 				setErrorLevel(1)
 				return
 			end
-			ctx = RvCtxCpu[id]
 
 			local newFreq = tpt.get_property('tmp3', x, y)
-			if newFreq > RvConstMaxFreqMultiplier then
+			if newFreq > rv.const.max_freq_multiplier then
 				setErrorLevel(1)
 				return
 			end
 
-			ctx.conf.freq = newFreq
+			cpu_ctx.conf.freq = newFreq
 			setReturn(0, 0)
 
 			return true
 		end,
 		-- (5) create instance
 		function ()
-			if not RvCreateInstance(id) then
+			if not rv_new_cpu_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
+				return false
 			else
 				setReturn(0, 0)
 			end
@@ -970,9 +1008,10 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		end,
 		-- (6) delete instance
 		function ()
-			if not RvDeleteInstance(id) then
+			if not rv_del_cpu_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
+				return false
 			else
 				setReturn(0, 0)
 			end
@@ -982,11 +1021,11 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		-- (7) read memory
 		function ()
 			local adr = tpt.get_property('tmp3', x, y)
-			local val = RvMemoryAccess(RvCtxCpu[id], adr, 3)
+			local val = rv_access_memory(rv.context.cpu[id], adr, 3)
 
 			if val == nil then
-				RvThrowException("Configuration: RvMemoryAccess is failed to read.")
-				return
+				RvThrowException("Configuration: rv_access_memory is failed to read.")
+				return false
 			end
 
 			setReturn(val, 0)
@@ -997,19 +1036,21 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 			local adr = tpt.get_property('tmp3', x, y)
 			local val = tpt.get_property('tmp4', x, y)
 
-			RvMemoryAccess(RvCtxCpu[id], adr, 3, val)
+			rv_access_memory(rv.context.cpu[id], adr, 3, val)
 
 			setReturn(0, 0)
 			return true
 		end,
 		-- (9) load test program
 		function ()
-			RvLoadTestCode(id)
+			rv_load_test_code(id)
+
+			setReturn(0, 0)
 			return true
 		end,
 		-- (10) get debug info
 		function ()
-			if not RvPrintDebugInfo(id) then
+			if not rv_print_debug_info(id) then
 				setErrorLevel(1)
 			end
 
@@ -1017,13 +1058,13 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 		end,
 		-- (11) toggle debugging segmentation
 		function ()
-			RvCtxMem[id].debug.segmentation = bit.bxor(RvCtxMem[id].debug.segmentation, 1)
+			rv.context.mem[id].debug.segmentation = bit.bxor(rv.context.mem[id].debug.segmentation, 1)
 			setReturn(0, 0)
 			return true
 		end,
 		-- (12) set or unset write protection on selected segment
 		function ()
-			local mem_ctx = RvCtxMem[id]
+			local mem_ctx = rv.context.mem[id]
 			local pos = tpt.get_property('tmp3', x, y)
 			local val = tpt.get_property('tmp4', x, y)
 
@@ -1037,18 +1078,97 @@ elements.property(RvRegisterElements, "Update", function (i, x, y, s, n)
 
 			setReturn(0, 0)
 			return true
-		end
+		end,
+		-- (13) create memory instance
+		function ()
+			if not rv_new_mem_instance(id) then
+				setReturn(-1, -1)
+				setErrorLevel(1)
+				return false
+			else
+				setErrorLevel(0)
+			end
 
+			return true
+		end,
+		-- (14) delete memory instance
+		function ()
+			if not rv_del_mem_instance(id) then
+				setReturn(-1, -1)
+				setErrorLevel(1)
+				return false
+			else
+				setErrorLevel(0)
+			end
+
+			return true
+		end,
 	}
 
 	local func = cfgOpTab[currentLife]
 	if func == nil then
 		setReturn(-1, -1)
+		setErrorLevel(1)
+		return
 	end
 
-	if func() == nil then
+	local retval = func()
+
+	if retval == nil then
 		setErrorLevel(1)
+	elseif retval == true then
+		setErrorLevel(0)
 	end
 
 	return
+end)
+
+RVREGISTER = elements.allocate(rv.const.mod_identify, "RAM")
+elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
+elements.property(RVREGISTER, "Name", "RAM")
+elements.property(RVREGISTER, "Description", "Random-Access Memory, can transfer data to the FILT and operate it as a PSCN, NSCN.")
+elements.property(RVREGISTER, "Colour", 0xDF3FBF)
+elements.property(RVREGISTER, "MenuSection", elem.SC_ELEC)
+elements.property(RVREGISTER, "Gravity", 0)
+elements.property(RVREGISTER, "Flammable", 1)
+elements.property(RVREGISTER, "Explosive", 0)
+elements.property(RVREGISTER, "Loss", 0)
+elements.property(RVREGISTER, "AirLoss", 1)
+elements.property(RVREGISTER, "AirDrag", 0)
+elements.property(RVREGISTER, "Advection", 1)
+elements.property(RVREGISTER, "Weight", 0)
+elements.property(RVREGISTER, "Diffusion", 0)
+
+elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
+	local id = tpt.get_property('ctype', x, y)
+	local detected_pscn
+	local detected_nscn
+
+	for ry = -2, 2 do
+		for rx = -2, 2 do
+			local el = tpt.get_property('type', x + rx, y + ry)
+
+			if el == elements.DEFAULT_PT_SPRK and tpt.get_property('life', x + rx, y + ry) == 3 then
+				if tpt.get_property('ctype', x + rx, y + ry) == elements.DEFAULT_PT_PSCN then
+					detected_pscn = true
+				elseif tpt.get_property('ctype', x + rx, y + ry) then
+					detected_nscn = true
+				end
+			end
+		end
+	end
+
+	if detected_pscn then
+		for ry = -2, 2 do
+			for rx = -2, 2 do
+				local filt = tpt.get_property('type', x + rx, y + ry)
+
+				if filt == elements.DEFAULT_PT_FILT then
+					-- RvMemoryAccess(RvCtxCpu[id], )
+				end
+			end
+		end
+	elseif detected_nscn then
+
+	end
 end)
