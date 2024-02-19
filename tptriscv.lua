@@ -321,7 +321,6 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		function ()
 			offset = bit.band(adr, 3)
 			mem_ctx.data[ea] = bit.bor(bit.band(mem_ctx.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(val, 0xFF), offset * 8))
---			print(string.format("dest: 0x%X, data: 0x%X", bit.bxor(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), val))
 			return true
 		end,
 		-- SH
@@ -1460,3 +1459,5 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 
 	end
 end)
+
+-- Also try Legend of Astrum!
