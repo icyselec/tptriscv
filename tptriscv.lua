@@ -20,6 +20,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 -- RISC-V 32-Bit Emulator for 'The Powder Toy'
 
 
+-- created new namespace for code re-factoring
+rv = {}
+-- created new namespace for constants
+RV = {}
+
 -- It prevents access to undeclared or uninitialized variables and print the name of variable.
 -- source by LBPHacker
 -- License: Do Whatever You Want With It 42.0™
@@ -36,34 +41,34 @@ do
 	setfenv(1, env)
 end
 
--- created new namespace for code re-factoring
-local rv = {
-	const = {},
-	context = {},
-	decode = {}
-}
+rv.context = {}
+rv.decode = {}
 
-rv.const.max_memory_word = 65536 -- 256 kiB limit
-rv.const.max_freq_multiplier = 1667
-rv.const.max_temperature = 120.0
-rv.const.mod_identify = "FREECOMPUTER"
-rv.const.extensions = {"RV32I"}
+-- definition constants
+RV.MAX_MEMORY_WORD = 65536 -- 256 kiB limit
+RV.MAX_MEMORY_SIZE = RV.MAX_MEMORY_WORD * 4
+RV.MAX_FREQ_MULTIPLIER = 1667
+RV.MAX_TEMPERATURE = 120.0
+RV.MOD_IDENTIFIER = "FREECOMPUTER"
+RV.EXTENSIONS = {"RV32I"}
+
+-- definition context class
 rv.context.cpu = {}
 rv.context.mem = {}
 
-local function rv_panic ()
+function rv.panic ()
 
 end
 
-local function rv_throw (msg)
+function rv.throw (msg)
 	print(msg)
 end
 
 
 
-local function rv_new_cpu_instance (instanceId)
+function rv.new_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] ~= nil then
-		rv_throw("rv_new_cpu_instance: Instance id already in use.")
+		rv.throw("rv_new_cpu_instance: Instance id already in use.")
 		return false
 	end
 
@@ -71,7 +76,8 @@ local function rv_new_cpu_instance (instanceId)
 		conf = {
 			mem_id = instanceId,
 			freq = 1, -- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
-			exts = { "RV32I", "RV32C" }
+			exts = { "RV32I", "RV32C" },
+			enable_rv32c = false
 		},
 		stat = {
 			is_halted = false,
@@ -90,9 +96,9 @@ local function rv_new_cpu_instance (instanceId)
 	return true
 end
 
-local function rv_new_mem_instance (instanceId)
+function rv.new_mem_instance (instanceId)
 	if rv.context.mem[instanceId] ~= nil then
-		rv_throw("rv_new_mem_instance: Instance id already in use.")
+		rv.throw("rv_new_mem_instance: Instance id already in use.")
 		return false
 	end
 
@@ -119,7 +125,7 @@ local function rv_new_mem_instance (instanceId)
 end
 
 
-local function rv_print_debug_info(id)
+function rv.print_debug_info(id)
 	local mem_ctx = rv.context.mem[id]
 	if mem_ctx == nil then
 		return false
@@ -133,7 +139,7 @@ local function rv_print_debug_info(id)
 	return true
 end
 
-local function rv_del_cpu_instance (instanceId)
+function rv.del_cpu_instance (instanceId)
 	if rv.context.cpu[instanceId] == nil then
 		rv_throw("rv_del_cpu_instance: Instance id already deleted.")
 		return false
@@ -144,7 +150,7 @@ local function rv_del_cpu_instance (instanceId)
 	return true
 end
 
-local function rv_del_mem_instance (instanceId)
+function rv.del_mem_instance (instanceId)
 	if rv.context.mem[instanceId] == nil then
 		rv_throw("rv_del_mem_instance: Instance id already deleted.")
 		return false
@@ -156,7 +162,7 @@ local function rv_del_mem_instance (instanceId)
 	return true
 end
 
-local function rv_access_memory (cpu_ctx, adr, mod, val)
+function rv.access_memory (cpu_ctx, adr, mod, val)
 	local retval
 	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
 
@@ -164,16 +170,16 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 	local offset = 0
 
 	local function report_error (cmd, msg)
-		rv_throw("rv_access_memory: " .. cmd .. " failed, " .. msg)
+		rv.throw("rv.access_memory: " .. cmd .. " failed, " .. msg)
 	end
 
 	-- memory limit check
-	if bit.bxor(bit.band(ea, 0x80000000), bit.band(rv.const.max_memory_word, 0x80000000)) == 0 then
-		if ea > rv.const.max_memory_word then
+	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RV.MAX_MEMORY_WORD, 0x80000000)) == 0 then
+		if ea > RV.MAX_MEMORY_WORD then
 			return nil
 		end
 	else
-		if ea < rv.const.max_memory_word then
+		if ea < RV.MAX_MEMORY_WORD then
 			return nil
 		end
 	end
@@ -211,15 +217,32 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		end,
 		-- LW
 		function ()
-			if cpu_ctx.stat.check_aligned then
-				offset = bit.band(adr, 3)
-				if offset ~= 0 then
-					report_error("LW", "Attempt to access unaligned memory.")
+			offset = bit.band(adr, 3)
+			local case_tab = {
+				function ()
+					return mem_ctx.data[ea]
+				end,
+				function ()
+					report_error("LW", "Not Supported load halfword using byte-addressing.")
 					return
-				end
+				end,
+				function ()
+					local retval = rv.access_memory(cpu_ctx, adr, 6)
+					return bit.bor(retval, bit.lshift(rv.access_memory(cpu_ctx, adr + 2, 6), 16))
+				end,
+				function ()
+					report_error("LW", "Not Supported load halfword using byte-addressing.")
+					return
+				end,
+			}
+
+			if offset ~= 0 and cpu_ctx.stat.check_aligned then
+				report_error("LW", "Attempt to access unaligned memory.")
+				return
 			end
 
-			return mem_ctx.data[ea]
+			local func = case_tab[offset + 1]
+			return func()
 		end,
 		-- none
 		function ()
@@ -233,7 +256,6 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-
 			if cpu_ctx.stat.check_aligned then
 				local sub_offset = bit.band(adr, 1)
 				if sub_offset ~= 0 then
@@ -258,8 +280,7 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 		-- SB
 		function ()
 			offset = bit.band(adr, 3)
-			local maskBit = bit.lshift(0xFF, offset * 8)
-			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], maskBit), bit.band(val, maskBit))
+			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), bit.lshift(bit.band(val, 0xFF), offset * 8))
 			return true
 		end,
 		-- SH
@@ -273,15 +294,21 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 			end
 
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			local maskBit = bit.lshift(0xFFFF, offset * 16)
-			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], maskBit), bit.band(val, maskBit))
+			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), bit.lshift(bit.band(val, 0xFFFF), offset * 16))
 			return true
 		end,
 		-- SW
 		function ()
-			if cpu_ctx.stat.check_aligned then
-				offset = bit.band(adr, 3)
-				if offset ~= 0 then
+			offset = bit.band(adr, 3)
+			if offset ~= 0 then
+				if cpu_ctx.stat.check_aligned then
+					report_error("SW", "Attempt to access unaligned memory.")
+					return
+				elseif bit.band(offset, 2) == 0 then
+					rv.access_memory(cpu_ctx, adr, 2, val)
+					val = bit.rshift(val, 16)
+					rv.access_memory(cpu_ctx, adr + 2, 2, val)
+				else
 					report_error("SW", "Attempt to access unaligned memory.")
 					return
 				end
@@ -316,27 +343,31 @@ local function rv_access_memory (cpu_ctx, adr, mod, val)
 	return retval
 end
 
-local function rv_load_test_code (instanceId)
+function rv.load_test_code (instanceId)
 	local cpu_ctx = rv.context.cpu[instanceId]
 	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
 	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
-	rv_access_memory(cpu_ctx, 4096, 3, 0x6c6c6548)
-	rv_access_memory(cpu_ctx, 4100, 3, 0x77202c6f)
-	rv_access_memory(cpu_ctx, 4104, 3, 0x646c726f)
-	rv_access_memory(cpu_ctx, 4108, 3, 0x00000a21)
+	rv.access_memory(cpu_ctx, 4096, 3, 0x6c6c6548)
+	rv.access_memory(cpu_ctx, 4100, 3, 0x77202c6f)
+	rv.access_memory(cpu_ctx, 4104, 3, 0x646c726f)
+	rv.access_memory(cpu_ctx, 4108, 3, 0x00000a21)
 	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
 end
 
-local function rv_fetch_instruction (cpu_ctx)
-	return rv_access_memory(cpu_ctx, cpu_ctx.regs.pc, 3)
+function rv.fetch_instruction (cpu_ctx, compact_mode)
+	if compact_mode then
+		return rv.access_memory(cpu_ctx, cpu_ctx.regs.pc, 6)
+	else
+		return rv.access_memory(cpu_ctx, cpu_ctx.regs.pc, 3)
+	end
 end
 
-local function rv32c_update_pc (cpu_ctx)
+function rv.update_pc_rv32c (cpu_ctx)
 	cpu_ctx.regs.pc = cpu_ctx.regs.pc + 2
 	cpu_ctx.stat.check_aligned = false
 end
 
-local function rv32i_update_pc (cpu_ctx)
+function rv.update_pc (cpu_ctx)
 	cpu_ctx.regs.pc = cpu_ctx.regs.pc + 4
 end
 
@@ -347,7 +378,7 @@ end
 
 ]]
 
-local function rv32c_decode (cpu_ctx, inst)
+function rv.decode_rv32c (cpu_ctx, inst)
 	local function decVal1_0 ()
 		return bit.band(inst, 0x3) + 1
 	end
@@ -375,7 +406,7 @@ local function rv32c_decode (cpu_ctx, inst)
 				function () return nil end, -- Not usable
 				-- C.LW
 				function ()
-					cpu_ctx.regs.gp[rd_rs2] = rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3)
+					cpu_ctx.regs.gp[rd_rs2] = rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3)
 				end,
 				-- C.FLW
 				function () return nil end,
@@ -385,7 +416,7 @@ local function rv32c_decode (cpu_ctx, inst)
 				function () return nil end,
 				-- C.SW
 				function ()
-					rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3, cpu_ctx.regs.gp[rd_rs2])
+					rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + uimm, 3, cpu_ctx.regs.gp[rd_rs2])
 				end,
 				-- C.FSW
 				function () return nil end,
@@ -404,7 +435,7 @@ local function rv32c_decode (cpu_ctx, inst)
 	return func()
 end
 
-local function rv32i_decode (cpu_ctx, inst)
+function rv.decode_rv32i (cpu_ctx, inst)
 	local retval
 
 	local function decVal4_2 ()
@@ -430,21 +461,21 @@ local function rv32i_decode (cpu_ctx, inst)
 			local decTab6_5 = {
 				function ()
 					-- LB/LH/LW/LBU/LHU
-					rv32i_update_pc(cpu_ctx)
+					rv.update_pc(cpu_ctx)
 					if rd ~= 1 then
-						cpu_ctx.regs.gp[rd] = rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3())
+						cpu_ctx.regs.gp[rd] = rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3())
 					end
 
 					if cpu_ctx.regs.gp[rd] == nil then
-						rv_throw("rv32i_decode: rv_access_memory returns nil value.")
+						rv.throw("rv.decode_rv32i: rv.access_memory returns nil value.")
 						return nil
 					end
 				end,
 				-- SB/SH/SW
 				function ()
-					rv32i_update_pc(cpu_ctx)
+					rv.update_pc(cpu_ctx)
 					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
-					return rv_access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
+					return rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
 				end,
 				function ()
 					return nil
@@ -548,7 +579,7 @@ local function rv32i_decode (cpu_ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					if not retval then rv32i_update_pc(cpu_ctx) end
+					if not retval then rv.update_pc(cpu_ctx) end
 
 					return retval
 				end,
@@ -703,7 +734,7 @@ local function rv32i_decode (cpu_ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					rv32i_update_pc(cpu_ctx)
+					rv.update_pc(cpu_ctx)
 					return retval
 				end,
 				-- ========== 01
@@ -789,7 +820,7 @@ local function rv32i_decode (cpu_ctx, inst)
 					if func == nil then return false end
 					local retval = func()
 
-					rv32i_update_pc(cpu_ctx)
+					rv.update_pc(cpu_ctx)
 					return retval
 				end,
 				-- ========== 10
@@ -829,7 +860,7 @@ local function rv32i_decode (cpu_ctx, inst)
 			local func = decTab6_5[decVal6_5()]
 			if func == nil then return false end
 
-			rv32i_update_pc(cpu_ctx)
+			rv.update_pc(cpu_ctx)
 			return func()
 		end,
 		-- ========== 110
@@ -838,7 +869,7 @@ local function rv32i_decode (cpu_ctx, inst)
 		end,
 		-- ========== 111 Not Supported other instruction length
 		function ()
-			rv_throw("rv32i_decode: Invalid instruction.")
+			rv.throw("rv32i_decode: Invalid instruction.")
 			return false
 		end
 	}
@@ -851,22 +882,28 @@ local function rv32i_decode (cpu_ctx, inst)
 	return retval
 end
 
-local function rv_decode (cpu_ctx)
-	local inst = rv_fetch_instruction(cpu_ctx)
+function rv.decode (cpu_ctx)
+	local inst = rv.fetch_instruction(cpu_ctx, true)
 	local retval1
 	local retval2
 
 	-- When instruction is C extension
 	if bit.band(inst, 3) ~= 3 then
-		retval1 = rv32c_decode(cpu_ctx, inst)
-		retval2 = rv32c_decode(cpu_ctx, bit.rshift(bit.band(inst, 0xFFFF0000), 16))
-		if retval1 == nil and retval2 == nil then
-			return nil
+		if cpu_ctx.conf.enable_rv32c then
+			retval1 = rv.decode_rv32c(cpu_ctx, inst)
+			inst = rv.fetch_instruction(cpu_ctx, true)
+			retval2 = rv.decode_rv32c(cpu_ctx, inst)
+			if retval1 == nil and retval2 == nil then
+				return nil
+			else
+				return false
+			end
 		else
-			return false
+			rv_throw("rv_decode: Unsupported extension.")
 		end
 	else
-		retval1 = rv32i_decode(cpu_ctx, inst)
+		inst = rv.fetch_instruction(cpu_ctx, false)
+		retval1 = rv.decode_rv32i(cpu_ctx, inst)
 	end
 
 	return retval1
@@ -874,7 +911,7 @@ end
 
 local RVREGISTER
 
-RVREGISTER = elements.allocate(rv.const.mod_identify, "CPU")
+RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CPU")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "CPU")
 elements.property(RVREGISTER, "Description", "RISC-V 32-Bit CPU, RV32I set is being implemented.")
@@ -925,7 +962,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 
 	if not cpu_ctx.stat.is_waiting then
 		for i = 1, freq do
-			rv_decode(cpu_ctx)
+			rv.decode(cpu_ctx)
 		end
 	end
 
@@ -937,7 +974,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	return
 end)
 
-RVREGISTER = elements.allocate(rv.const.mod_identify, "CFG")
+RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CFG")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "CFG")
 elements.property(RVREGISTER, "Description", "Configuration, check or set the instance state of Computer mod.")
@@ -969,6 +1006,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		if errNum < 0 then errNum = -errNum end
 		tpt.set_property('life', -errNum, x, y)
 	end
+
+	local function getter (prop_name) return tpt.get_property(prop_name, x, y) end
+	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
 
 	-- Caution! : API is unstable
 	local id = tpt.get_property('ctype', x, y)
@@ -1049,7 +1089,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (5) create instance
 		function ()
-			if not rv_new_cpu_instance(id) then
+			if not rv.new_cpu_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -1061,7 +1101,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (6) delete instance
 		function ()
-			if not rv_del_cpu_instance(id) then
+			if not rv.del_cpu_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -1074,10 +1114,10 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (7) read memory
 		function ()
 			local adr = tpt.get_property('tmp3', x, y)
-			local val = rv_access_memory(rv.context.cpu[id], adr, 3)
+			local val = rv.access_memory(rv.context.cpu[id], adr, 3)
 
 			if val == nil then
-				RvThrowException("Configuration: rv_access_memory is failed to read.")
+				rv.throw("Configuration: rv.access_memory is failed to read.")
 				return false
 			end
 
@@ -1086,24 +1126,24 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (8) write memory
 		function ()
-			local adr = tpt.get_property('tmp3', x, y)
-			local val = tpt.get_property('tmp4', x, y)
+			local adr = getter('tmp3')
+			local val = getter('tmp4')
 
-			rv_access_memory(rv.context.cpu[id], adr, 3, val)
+			rv.access_memory(rv.context.cpu[id], adr, 3, val)
 
 			setReturn(0, 0)
 			return true
 		end,
 		-- (9) load test program
 		function ()
-			rv_load_test_code(id)
+			rv.load_test_code(id)
 
 			setReturn(0, 0)
 			return true
 		end,
 		-- (10) get debug info
 		function ()
-			if not rv_print_debug_info(id) then
+			if not rv.print_debug_info(id) then
 				setErrorLevel(1)
 			end
 
@@ -1118,8 +1158,8 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (12) set or unset write protection on selected segment
 		function ()
 			local mem_ctx = rv.context.mem[id]
-			local pos = tpt.get_property('tmp3', x, y)
-			local val = tpt.get_property('tmp4', x, y)
+			local pos = getter('tmp3')
+			local val = getter('tmp4')
 
 			if val == 0 then
 				val = false
@@ -1134,7 +1174,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (13) create memory instance
 		function ()
-			if not rv_new_mem_instance(id) then
+			if not rv.new_mem_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -1146,7 +1186,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (14) delete memory instance
 		function ()
-			if not rv_del_mem_instance(id) then
+			if not rv.del_mem_instance(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -1154,6 +1194,66 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				setErrorLevel(0)
 			end
 
+			return true
+		end,
+		-- (15) register dump
+		function ()
+			local cpu_ctx = rv.context.cpu[id]
+
+			if cpu_ctx == nil then
+				tpt.message_box("Error", "Invalid instance ID.")
+				setReturn(-1, -1)
+				setErrorLevel(1)
+				return false
+			end
+
+			local msg = ""
+
+			for i = 0, 31 do
+				msg = msg .. "R" .. tostring(i) .. ": " .. string.format("0x%X\n", cpu_ctx.regs.gp[i+1])
+			end
+			msg = msg .. "\nPC: " .. string.format("0x%X", cpu_ctx.regs.pc)
+
+			tpt.message_box("RISC-V Register Dump", msg)
+
+			return true
+		end,
+		-- (16) memory dump
+		-- tmp3: start of memory
+		-- tmp4: end of memory
+		function ()
+			local beg = getter('tmp3')
+			local max = getter('tmp4')
+			local msg = ""
+
+			local cpu_ctx = rv.context.cpu[id]
+
+			if beg > max then
+				tpt.message_box("Error", "Invalid range.")
+				setReturn(-1, -1)
+				setErrorLevel(1)
+				return false
+			end
+
+			if max - beg > 16 then
+				tpt.message_box("Error", "Range too big.")
+				setReturn(-1, -1)
+				setErrorLevel(1)
+				return false
+			end
+
+			for i = beg, max, 16 do
+				local data
+
+				for j = 0, 12, 4 do
+					data = rv.access_memory(cpu_ctx, i + j, 3)
+					msg = msg .. string.format("0x%X ", data)
+				end
+
+				msg = msg .. "\n"
+			end
+
+			tpt.message_box("RISC-V Memory Dump", "beg: " .. tostring(beg) .. ", max: " .. tostring(max) .. "\n" .. msg)
 			return true
 		end,
 	}
@@ -1176,7 +1276,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	return
 end)
 
-RVREGISTER = elements.allocate(rv.const.mod_identify, "RAM")
+RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "RAM")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "RAM")
 elements.property(RVREGISTER, "Description", "Random-Access Memory, can transfer data to the FILT and operate it as a PSCN, NSCN.")
