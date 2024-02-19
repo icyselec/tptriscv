@@ -53,8 +53,450 @@ RV.MAX_TEMPERATURE = 120.0
 RV.MOD_IDENTIFIER = "FREECOMPUTER"
 RV.EXTENSIONS = {"RV32I"}
 
--- definition instance
+local Cpu = {
+	conf = {
+		ref_instance = nil,
+		freq = 1, -- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
+		exts = { "RV32I", "RV32C" },
+		enable_rv32c = false,
+		check_aligned = false,
+	},
+	stat = {
+		is_halted = false,
+		is_aligned = true,
+		is_waiting = false,
+	},
+	regs = {
+		-- general-purpose register
+		gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+		-- program counter
+		pc = 0,
+	},
+}
+
+local Mem = {
+	conf = {
+		bit_width = 32,
+		size = RV.MAX_MEMORY_SIZE
+	},
+	stat = {},
+	data = {},
+	debug = {
+		segmentation = false,
+		segment_size = 32,
+		panic_when_fault = false,
+		segment_map = {},
+	},
+}
+
+function Cpu:new (o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self
+	return o
+end
+
+function Cpu:access_register (r, v)
+	if r == 1 then
+		print("debug, pc: " .. self:access_pc())
+	end
+
+	r = r + 1
+
+	if v == nil then
+		return self.regs.gp[r]
+	elseif r == 1 then
+		return
+	end
+
+	self.regs.gp[r] = bit.band(v, 0xFFFFFFFF)
+end
+
+function Cpu:fetch_instruction (compact_mode)
+	local mem = self.conf.ref_instance.mem
+
+	if compact_mode then
+		return mem:access(self, self.regs.pc, 6)
+	else
+		return mem:access(self, self.regs.pc, 3)
+	end
+end
+
+function Cpu:update_pc (compact_mode)
+	print("debug, current pc: " .. self:access_pc())
+	compact_mode = compact_mode or false
+
+	if compact_mode then
+		self.regs.pc = self.regs.pc + 2
+		self.stat.is_aligned = false
+	else
+		self.regs.pc = self.regs.pc + 4
+	end
+end
+
+function Cpu:access_pc (v)
+	if v == nil then
+		return self.regs.pc
+	else
+		self.regs.pc = bit.band(v, 0xFFFFFFFF)
+	end
+end
+
+function Mem:new (o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self
+
+	setmetatable(o.data, { __index = function(self) return 0 end })
+	setmetatable(o.debug.segment_map, { __index = function(self) return 0 end })
+
+	return o
+end
+
+function Mem:raw_access (addr, mode, data)
+	local ea = bit.rshift(addr, 2) + 1
+	local offset = 0
+
+	local function report_error (cmd, msg)
+		rv.throw("Mem:raw_access: " .. cmd .. " failed, " .. msg)
+	end
+
+	local rdOpTab = {
+		-- LB
+		function ()
+			offset = bit.band(addr, 3)
+			return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), offset * 8)
+		end,
+		-- LH
+		function ()
+			offset = bit.rshift(bit.band(addr, 3), 1)
+			return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
+		end,
+		-- LW
+		function ()
+			offset = bit.band(addr, 3)
+			return self.data[ea]
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- LBU
+		function ()
+			offset = bit.band(addr, 3)
+			local retval = bit.rshift(bit.band(self.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
+			return retval
+		end,
+		-- LHU
+		function ()
+			offset = bit.rshift(bit.band(addr, 3), 1)
+			return bit.rshift(bit.band(self.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+	}
+
+	local wrOpTab = {
+		-- SB
+		function ()
+			offset = bit.band(addr, 3)
+			self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(data, 0xFF), offset * 8))
+			return true
+		end,
+		-- SH
+		function ()
+			offset = bit.rshift(bit.band(addr, 3), 1)
+			self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(0xFFFF, offset * 16))), bit.lshift(bit.band(data, 0xFFFF), offset * 16))
+			return true
+		end,
+		-- SW
+		function ()
+			offset = bit.band(addr, 3)
+			self.data[ea] = data
+			return true
+		end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+	}
+
+	local func
+
+	if data == nil then
+		func = rdOpTab[mode]
+	else
+		func = wrOpTab[mode]
+	end
+
+	if func == nil then return nil end
+	return func()
+end
+
+
+function Mem:access (core, addr, mode, data)
+	local retval
+
+	local ea = bit.rshift(addr, 2) + 1
+	local offset = 0
+
+	local function report_error (cmd, msg)
+		rv.throw("Mem:access: " .. cmd .. " failed, " .. msg)
+	end
+
+	-- memory limit check
+	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RV.MAX_MEMORY_WORD, 0x80000000)) == 0 then
+		if ea > RV.MAX_MEMORY_WORD then
+			rv.throw("Mem:Access: Memory out of bound.")
+			return nil
+		end
+	else
+		if ea < RV.MAX_MEMORY_WORD then
+			rv.throw("Mem:Access: Memory out of bound.")
+			return nil
+		end
+	end
+
+	if self.debug.segmentation == true then
+		local ea = bit.rshift(addr, 2)
+		ea = bit.rshift(ea, self.debug.segment_size)
+		if val ~= nil and self.debug.segment_map[ea] == true then
+			if self.debug.panic_when_fault == true then
+				rv.panic()
+			end
+		end
+	end
+
+
+	local rdOpTab = {
+		-- LB
+		function ()
+			offset = bit.band(addr, 3)
+			return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), offset * 8)
+		end,
+		-- LH
+		function ()
+			offset = bit.rshift(bit.band(addr, 3), 1)
+
+			if core.conf.check_aligned then
+				local sub_offset = bit.band(addr, 1)
+				if sub_offset ~= 0 then
+					report_error("LH", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
+			return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
+		end,
+		-- LW
+		function ()
+			offset = bit.band(addr, 3)
+			local case_tab = {
+				function ()
+					return self.data[ea]
+				end,
+				function ()
+					report_error("LW", "Not Supported load halfword using byte-addressing.")
+					return
+				end,
+				function ()
+					local retval = self:access(core, addr, 6)
+					return bit.bor(retval, bit.lshift(self:access(core, addr + 2, 6), 16))
+				end,
+				function ()
+					report_error("LW", "Not Supported load halfword using byte-addressing.")
+					return
+				end,
+			}
+
+			if offset ~= 0 and core.conf.check_aligned then
+				report_error("LW", "Attempt to access unaligned memory.")
+				return
+			end
+
+			local func = case_tab[offset + 1]
+			return func()
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- LBU
+		function ()
+			offset = bit.band(addr, 3)
+			local retval = bit.rshift(bit.band(self.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
+			return retval
+		end,
+		-- LHU
+		function ()
+			offset = bit.rshift(bit.band(addr, 3), 1)
+			if core.conf.check_aligned then
+				local sub_offset = bit.band(addr, 1)
+				if sub_offset ~= 0 then
+					report_error("LHU", "Attempt to access unaligned memory.")
+					return nil
+				end
+			end
+
+			return bit.rshift(bit.band(self.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+		-- none
+		function ()
+			return nil
+		end,
+	}
+
+	local wrOpTab = {
+		-- SB
+		function ()
+			offset = bit.band(addr, 3)
+			self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(data, 0xFF), offset * 8))
+			print("store to: " .. tostring(addr) .. ", value: " .. tostring(data))
+			return true
+		end,
+		-- SH
+		function ()
+			if core.conf.check_aligned then
+				local sub_offset = bit.band(addr, 1)
+				if sub_offset ~= 0 then
+					report_error("SH", "Attempt to access unaligned memory.")
+					return
+				end
+			end
+
+			offset = bit.rshift(bit.band(addr, 3), 1)
+			self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(0xFFFF, offset * 16))), bit.lshift(bit.band(data, 0xFFFF), offset * 16))
+			return true
+		end,
+		-- SW
+		function ()
+			offset = bit.band(addr, 3)
+			if offset ~= 0 then
+				if core.conf.check_aligned then
+					report_error("SW", "Attempt to access unaligned memory.")
+					return nil
+				elseif bit.band(offset, 2) == 0 then
+					self:access(core, addr, 2, data)
+					val = bit.rshift(val, 16)
+					self:access(core, addr + 2, 2, data)
+					print("(misaligned)store to: " .. tostring(addr) .. ", value: " .. tostring(data))
+					return true
+				else
+					report_error("SW", "Attempt to access unaligned memory.")
+					return nil
+				end
+			end
+
+			self.data[ea] = data
+			print("(aligned)store to: " .. tostring(addr) .. ", value: " .. tostring(data) .. ", pc: " .. tostring(core:access_pc()))
+			return true
+		end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+		-- none
+		function () return nil end,
+	}
+
+	local func
+
+	if data == nil then
+		func = rdOpTab[mode]
+	else
+		func = wrOpTab[mode]
+	end
+
+
+
+	if func == nil then return nil end
+	retval = func()
+
+	if retval == nil then
+		rv.throw("Mem:access: Not implemented instruction dectected. processor is halted.")
+		core.stat.is_halted = true
+		return nil
+	end
+
+	return retval
+end
+
+function Mem:load_memory (base, size, filename)
+	local f = assert(io.open(filename, "rb"))
+	local i = 0
+
+	for line in f:lines() do
+		self:raw_access(base + i, 3, tonumber(line, 16))
+		if i > size then
+			break
+		end
+
+		i = i + 4
+	end
+
+	f:close()
+end
+
+function Mem:dump_memory (base, size, filename)
+	local f = assert(io.open(filename, "wb"))
+	local i = 0
+
+	repeat
+		local data = self:raw_access(base + i, 3)
+		f:write(string.format("%X\n", data))
+		i = i + 4
+	until i > size
+
+	f:close()
+end
+
+
+
+local Instance = {
+	cpu = {},
+	mem = {},
+	conf = {},
+	stat = {},
+}
+
 rv.instance = {}
+
+function Instance:new (o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self
+
+	o.cpu[1] = Cpu:new()
+	o.cpu[1].conf.ref_instance = o
+
+	o.mem = Mem:new()
+
+	return o
+end
+
+function Instance:del (o)
+	self = nil
+end
 
 -- definition of permissions
 rv.permissions.clipboard_access = nil
@@ -99,76 +541,8 @@ function rv.try_permission (perm_name)
 	else return true end
 end
 
-
-
-function rv.new_instance (instance_id)
-	if rv.instance[instance_id] ~= nil then
-		rv.throw("rv.new_instance: Instance id already in use.")
-		return false
-	end
-
-	rv.instance[instance_id] = {}
-	rv.instance[instance_id].cpu = {}
-	rv.instance[instance_id].cpu[1] = {
-		conf = {
-			self_id = instance_id,
-			freq = 1, -- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
-			exts = { "RV32I", "RV32C" },
-			enable_rv32c = false,
-			check_aligned = false
-		},
-		stat = {
-			is_halted = false,
-			is_aligned = true,
-			is_waiting = false,
-
-		},
-		regs = {
-			-- general-purpose register
-			gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
-			-- program counter
-			pc = 0
-		}
-	}
-
-
-	rv.instance[instance_id].mem = {}
-	local mem = rv.instance[instance_id].mem
-	mem.data = {}
-	mem.conf = {
-		bit_width = 32,
-		size = 65536 * 4
-	}
-
-	mem.debug = {
-		segmentation = false,
-		segment_size = 32,
-		panic_when_fault = false,
-		segment_map = {}
-	}
-
-	setmetatable(mem.debug.segment_map, { __index = function(self) return 0 end })
-
-	setmetatable(mem.data, { __index = function(self) return 0 end })
-
-	rv.instance[instance_id].cpu[1].memref = mem
-
-	return true
-end
-
-function rv.del_instance (instance_id)
-	if rv.instance[instance_id] == nil then
-		rv.throw("rv.del_instance: Already instance id is invalid.")
-		return false
-	end
-
-	rv.instance[instance_id] = nil
-
-	return true
-end
-
-function rv.print_debug_info(instance_id)
-	local mem = rv.instance[instance_id].mem
+function rv.print_debug_info(instance)
+	local mem = instance.mem
 	if mem == nil then
 		return false
 	end
@@ -184,350 +558,7 @@ end
 
 
 
-function rv.raw_access_memory (mem, adr, mod, val)
-	local ea = bit.rshift(adr, 2) + 1
-	local offset = 0
 
-	local function report_error (cmd, msg)
-		rv.throw("rv.access_memory: " .. cmd .. " failed, " .. msg)
-	end
-
-	local rdOpTab = {
-		-- LB
-		function ()
-			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(mem.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), offset * 8)
-		end,
-		-- LH
-		function ()
-			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.arshift(bit.lshift(bit.band(mem.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
-		end,
-		-- LW
-		function ()
-			offset = bit.band(adr, 3)
-			return mem.data[ea]
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-		-- LBU
-		function ()
-			offset = bit.band(adr, 3)
-			local retval = bit.rshift(bit.band(mem.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
-			return retval
-		end,
-		-- LHU
-		function ()
-			offset = bit.rshift(bit.band(adr, 3), 1)
-			return bit.rshift(bit.band(mem.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-	}
-
-	local wrOpTab = {
-		-- SB
-		function ()
-			offset = bit.band(adr, 3)
-			mem.data[ea] = bit.bor(bit.band(mem.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(val, 0xFF), offset * 8))
-			return true
-		end,
-		-- SH
-		function ()
-			offset = bit.rshift(bit.band(adr, 3), 1)
-			mem.data[ea] = bit.bor(bit.band(mem.data[ea], bit.bnot(bit.lshift(0xFFFF, offset * 16))), bit.lshift(bit.band(val, 0xFFFF), offset * 16))
-			return true
-		end,
-		-- SW
-		function ()
-			offset = bit.band(adr, 3)
-			mem.data[ea] = val
-			return true
-		end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-	}
-
-	local func
-
-	if val == nil then
-		func = rdOpTab[mod]
-	else
-		func = wrOpTab[mod]
-	end
-
-	if func == nil then return nil end
-	return func()
-end
-
-function rv.access_memory (cpu, adr, mod, val)
-	local retval
-	local mem = cpu.memref
-
-	local ea = bit.rshift(adr, 2) + 1
-	local offset = 0
-
-	local function report_error (cmd, msg)
-		rv.throw("rv.access_memory: " .. cmd .. " failed, " .. msg)
-	end
-
-	-- memory limit check
-	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RV.MAX_MEMORY_WORD, 0x80000000)) == 0 then
-		if ea > RV.MAX_MEMORY_WORD then
-			rv.throw("rv.access_memory: Memory out of bound.")
-			return nil
-		end
-	else
-		if ea < RV.MAX_MEMORY_WORD then
-			rv.throw("rv.access_memory: Memory out of bound.")
-			return nil
-		end
-	end
-
-	if mem.debug.segmentation == true then
-		local ea = bit.rshift(adr, 2)
-		ea = bit.rshift(ea, mem.debug.segment_size)
-		if val ~= nil and mem.debug.segment_map[ea] == true then
-			if mem.debug.panic_when_fault == true then
-				rv_panic()
-			end
-		end
-	end
-
-
-	local rdOpTab = {
-		-- LB
-		function ()
-			offset = bit.band(adr, 3)
-			return bit.arshift(bit.lshift(bit.band(mem.data[ea], bit.lshift(0xFF, offset * 8)), (3 - offset) * 8), offset * 8)
-		end,
-		-- LH
-		function ()
-			offset = bit.rshift(bit.band(adr, 3), 1)
-
-			if cpu.conf.check_aligned then
-				local sub_offset = bit.band(adr, 1)
-				if sub_offset ~= 0 then
-					report_error("LH", "Attempt to access unaligned memory.")
-					return
-				end
-			end
-
-			return bit.arshift(bit.lshift(bit.band(mem.data[ea], bit.lshift(0xFFFF, offset * 16))), offset * 16)
-		end,
-		-- LW
-		function ()
-			offset = bit.band(adr, 3)
-			local case_tab = {
-				function ()
-					return mem.data[ea]
-				end,
-				function ()
-					report_error("LW", "Not Supported load halfword using byte-addressing.")
-					return
-				end,
-				function ()
-					local retval = rv.access_memory(cpu, adr, 6)
-					return bit.bor(retval, bit.lshift(rv.access_memory(cpu, adr + 2, 6), 16))
-				end,
-				function ()
-					report_error("LW", "Not Supported load halfword using byte-addressing.")
-					return
-				end,
-			}
-
-			if offset ~= 0 and cpu.conf.check_aligned then
-				report_error("LW", "Attempt to access unaligned memory.")
-				return
-			end
-
-			local func = case_tab[offset + 1]
-			return func()
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-		-- LBU
-		function ()
-			offset = bit.band(adr, 3)
-			local retval = bit.rshift(bit.band(mem.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
-			return retval
-		end,
-		-- LHU
-		function ()
-			offset = bit.rshift(bit.band(adr, 3), 1)
-			if cpu.conf.check_aligned then
-				local sub_offset = bit.band(adr, 1)
-				if sub_offset ~= 0 then
-					report_error("LHU", "Attempt to access unaligned memory.")
-					return nil
-				end
-			end
-
-			return bit.rshift(bit.band(mem.data[ea], bit.lshift(0xFFFF, offset * 16)), offset * 16)
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-		-- none
-		function ()
-			return nil
-		end,
-	}
-
-	local wrOpTab = {
-		-- SB
-		function ()
-			offset = bit.band(adr, 3)
-			mem.data[ea] = bit.bor(bit.band(mem.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(val, 0xFF), offset * 8))
-			return true
-		end,
-		-- SH
-		function ()
-			if cpu.conf.check_aligned then
-				local sub_offset = bit.band(adr, 1)
-				if sub_offset ~= 0 then
-					report_error("SH", "Attempt to access unaligned memory.")
-					return
-				end
-			end
-
-			offset = bit.rshift(bit.band(adr, 3), 1)
-			mem.data[ea] = bit.bor(bit.band(mem.data[ea], bit.bnot(bit.lshift(0xFFFF, offset * 16))), bit.lshift(bit.band(val, 0xFFFF), offset * 16))
-			return true
-		end,
-		-- SW
-		function ()
-			offset = bit.band(adr, 3)
-			if offset ~= 0 then
-				if cpu.conf.check_aligned then
-					report_error("SW", "Attempt to access unaligned memory.")
-					return nil
-				elseif bit.band(offset, 2) == 0 then
-					rv.access_memory(cpu, adr, 2, val)
-					val = bit.rshift(val, 16)
-					rv.access_memory(cpu, adr + 2, 2, val)
-					return true
-				else
-					report_error("SW", "Attempt to access unaligned memory.")
-					return nil
-				end
-			end
-
-			mem.data[ea] = val
-			return true
-		end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-		-- none
-		function () return nil end,
-	}
-
-	local func
-
-	if val == nil then
-		func = rdOpTab[mod]
-	else
-		func = wrOpTab[mod]
-	end
-
-
-
-	if func == nil then return nil end
-	retval = func()
-
-	if retval == nil then
-		rv.throw("rv.access_memory: Not implemented instruction dectected. processor is halted.")
-		cpu.stat.is_halted = true
-		return nil
-	end
-
-	return retval
-end
-
-function rv.string_to_memory (instance_id, begin, value)
-	local instance = rv.instance[id]
-	local mem = instance.mem
-
-	-- Not Implemeted
-
-end
-
-function rv.load_memory (instance_id, base, size, filename)
-	local instance = rv.instance[instance_id]
-	local mem = instance.mem
-
-	local f = assert(io.open(filename, "rb"))
-	local i = 0
-
-	for line in f:lines() do
-		rv.raw_access_memory(mem, base + i, 3, tonumber(line, 16))
-		if i > size then
-			break
-		end
-
-		i = i + 4
-	end
---	setmetatable(mem.data, { __index = function(self) return 0 end })
-	f:close()
-end
-
-function rv.dump_memory (instance_id, base, size, filename)
-	local instance = rv.instance[instance_id]
-	local mem = instance.mem
-
-	local f = assert(io.open(filename, "wb"))
-	local i = 0
-
-	repeat
-		local data = rv.raw_access_memory(mem, base + i, 3)
-		f:write(string.format("%X\n", data))
-		i = i + 4
-	until i > size
-
-	f:close()
-end
-
-function rv.fetch_instruction (cpu, compact_mode)
-	if compact_mode then
-		return rv.access_memory(cpu, cpu.regs.pc, 6)
-	else
-		return rv.access_memory(cpu, cpu.regs.pc, 3)
-	end
-end
-
-function rv.update_pc_rv32c (cpu)
-	cpu.regs.pc = cpu.regs.pc + 2
-	cpu.stat.check_aligned = false
-end
-
-function rv.update_pc (cpu)
-	cpu.regs.pc = cpu.regs.pc + 4
-end
 
 --[[
 ==================================================================
@@ -564,7 +595,8 @@ function rv.decode_rv32c (cpu, cmd)
 				function () return nil end, -- Not usable
 				-- C.LW
 				function ()
-					cpu.regs.gp[rd_rs2] = rv.access_memory(cpu, cpu.regs.gp[rs1] + uimm, 3)
+					local mem = cpu.conf.ref_instance.mem
+					cpu:access_register(rd_rs2, mem:access(cpu, cpu.regs.gp[rs1] + uimm, 3))
 				end,
 				-- C.FLW
 				function () return nil end,
@@ -574,7 +606,8 @@ function rv.decode_rv32c (cpu, cmd)
 				function () return nil end,
 				-- C.SW
 				function ()
-					rv.access_memory(cpu, cpu.regs.gp[rs1] + uimm, 3, cpu.regs.gp[rd_rs2])
+					local mem = cpu.conf.ref_instance.mem
+					mem:access(cpu, cpu.regs.gp[rs1] + uimm, 3, cpu.regs.gp[rd_rs2])
 				end,
 				-- C.FSW
 				function () return nil end,
@@ -595,6 +628,7 @@ end
 
 function rv.decode_rv32i (cpu, cmd)
 	local retval
+	local mem = cpu.conf.ref_instance.mem
 
 	local function decVal4_2 ()
 		return bit.rshift(bit.band(cmd, 0x1C), 2) + 1
@@ -611,29 +645,22 @@ function rv.decode_rv32i (cpu, cmd)
 	local decTab4_2 = {
 		-- ========== 000
 		function ()
-			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7) + 1
-			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15) + 1
-			local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20) + 1 -- maybe plus one
+			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
+			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
+			local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20)
 			local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
 
 			local decTab6_5 = {
 				function ()
 					-- LB/LH/LW/LBU/LHU
-					rv.update_pc(cpu)
-					if rd ~= 1 then
-						cpu.regs.gp[rd] = rv.access_memory(cpu, cpu.regs.gp[rs1] + imm, decValFnt3())
-					end
-
-					if cpu.regs.gp[rd] == nil then
-						rv.throw("rv.decode_rv32i: rv.access_memory returns nil value.")
-						return nil
-					end
+					cpu:access_register(rd, mem:access(cpu, cpu:access_register(rs1) + imm, decValFnt3()))
+					cpu:update_pc(false)
 				end,
 				-- SB/SH/SW
 				function ()
-					local imm = bit.bor(bit.arshift(bit.band(cmd, 0xFE000000), 20), rd-1)
-					local retval = rv.access_memory(cpu, cpu.regs.gp[rs1] + imm, decValFnt3(), cpu.regs.gp[rs2])
-					rv.update_pc(cpu)
+					local imm = bit.bor(bit.arshift(bit.band(cmd, 0xFE000000), 20), rd)
+					local retval = mem:access(cpu, cpu:access_register(rs1) + imm, decValFnt3(), cpu:access_register(rs2))
+					cpu:update_pc(false)
 					return retval
 				end,
 				function ()
@@ -641,20 +668,13 @@ function rv.decode_rv32i (cpu, cmd)
 				end,
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
 				function ()
-					local rs1_value = bit.bor(cpu.regs.gp[rs1], 0)
-					local rs2_value = bit.bor(cpu.regs.gp[rs2], 0)
-
-					local imm = bit.band(cmd, 0x80000000)
-					imm = bit.bor(imm, bit.rshift(bit.band(cmd, 0x7E000000), 1))
-					imm = bit.bor(imm, bit.lshift(bit.band(cmd, 0x00000080), 23))
-					imm = bit.bor(imm, bit.lshift(bit.band(cmd, 0x00000F00), 12))
-					imm = bit.arshift(imm, 19)
+					local rs1_value = cpu:access_register(rs1)
+					local rs2_value = cpu:access_register(rs2)
 
 					local decTabFnt3 = {
 						-- BEQ
 						function ()
 							if rs1_value == rs2_value then
-								cpu.regs.pc = cpu.regs.pc + imm
 								return true
 							end
 
@@ -663,7 +683,6 @@ function rv.decode_rv32i (cpu, cmd)
 						-- BNE
 						function ()
 							if rs1_value ~= rs2_value then
-								cpu.regs.pc = cpu.regs.pc + imm
 								return true
 							end
 
@@ -672,7 +691,6 @@ function rv.decode_rv32i (cpu, cmd)
 						-- BLT
 						function ()
 							if rs1_value < rs2_value then
-								cpu.regs.pc = cpu.regs.pc + imm
 								return true
 							end
 
@@ -681,7 +699,6 @@ function rv.decode_rv32i (cpu, cmd)
 						-- BGE
 						function ()
 							if rs1_value >= rs2_value then
-								cpu.regs.pc = cpu.regs.pc + imm
 								return true
 							end
 
@@ -689,18 +706,16 @@ function rv.decode_rv32i (cpu, cmd)
 						end,
 						-- BLTU
 						function ()
-							local rs1_value = cpu.regs.gp[rs1]
-							local rs2_value = cpu.regs.gp[rs2]
+							local rs1_value = cpu:access_register(rs1)
+							local rs2_value = cpu:access_register(rs2)
 
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
 							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
 								if rs1_value < rs2Value then
-									cpu.regs.pc = cpu.regs.pc + imm
 									return true
 								end
 							else
 								if rs1Value > rs2Value then
-									cpu.regs.pc = cpu.regs.pc + imm
 									return true
 								end
 							end
@@ -709,19 +724,17 @@ function rv.decode_rv32i (cpu, cmd)
 						end,
 						-- BGEU
 						function ()
-							local rs1_value = cpu.regs.gp[rs1]
-							local rs2_value = cpu.regs.gp[rs2]
+							local rs1_value = cpu:access_register(rs1)
+							local rs2_value = cpu:access_register(rs2)
 
 							if rs1_value == rs2_value then
-								cpu.regs.pc = cpu.regs.pc + imm
+								return true
 							elseif bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
 								if rs1_value >= rs2_value then
-									cpu.regs.pc = cpu.regs.pc + imm
 									return true
 								end
 							else
 								if rs1_value < rs2_value then
-									cpu.regs.pc = cpu.regs.pc + imm
 									return true
 								end
 							end
@@ -738,7 +751,17 @@ function rv.decode_rv32i (cpu, cmd)
 					if func == nil then return false end
 					local retval = func()
 
-					if not retval then rv.update_pc(cpu) end
+					if not retval then cpu:update_pc(false) end
+
+					if retval then
+						local imm = bit.band(cmd, 0x80000000)
+						imm = bit.bor(imm, bit.rshift(bit.band(cmd, 0x7E000000), 1))
+						imm = bit.bor(imm, bit.lshift(bit.band(cmd, 0x00000080), 23))
+						imm = bit.bor(imm, bit.lshift(bit.band(cmd, 0x00000F00), 12))
+						imm = bit.arshift(imm, 19)
+
+						cpu:access_pc(cpu:access_pc() + imm)
+					end
 
 					return retval
 				end,
@@ -762,18 +785,18 @@ function rv.decode_rv32i (cpu, cmd)
 				end,
 				-- JALR
 				function ()
-					local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7) + 1
-					local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15) + 1
+					local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
+					local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
 					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
 
 					if bit.band(cmd, 0x00007000) ~= 0 then
 						return nil
 					end
 
-					local backup = cpu.regs.pc
+					local backup = cpu:access_pc()
 
-					cpu.regs.pc = bit.band(cpu.regs.gp[rs1] + imm, 0xFFFFFFFE) -- then setting least-significant bit of the result to zero.
-					cpu.regs.gp[rd] = backup
+					cpu:access_pc(bit.band(cpu:access_register(rs1) + imm, 0xFFFFFFFE)) -- then setting least-significant bit of the result to zero.
+					cpu:access_register(rd, backup)
 				end,
 			}
 
@@ -789,7 +812,7 @@ function rv.decode_rv32i (cpu, cmd)
 		end,
 		-- ========== 011
 		function ()
-			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7) + 1
+			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
 			local imm20 = bit.band(cmd, 0x80000000)
 			imm20 = bit.bor(imm20, bit.rshift(bit.band(cmd, 0x7FE00000), 9))
 			imm20 = bit.bor(imm20, bit.lshift(bit.band(cmd, 0x00100000), 2))
@@ -808,8 +831,8 @@ function rv.decode_rv32i (cpu, cmd)
 				end,
 				-- JAL
 				function ()
-					cpu.regs.gp[rd] = cpu.regs.pc + 4
-					cpu.regs.pc = bit.band(cpu.regs.pc + imm20, 0xFFFFFFFF)
+					cpu:access_register(rd, cpu:access_pc() + 4)
+					cpu:access_pc(cpu.regs.pc + imm20)
 				end,
 			}
 			local func = decTab6_5[decVal6_5()]
@@ -820,55 +843,58 @@ function rv.decode_rv32i (cpu, cmd)
 		end,
 		-- ========== 100
 		function ()
-			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7) + 1
-			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15) + 1
+			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
+			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
 			local decTab6_5 = {
 				-- ========== 00
 				function ()
 					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
-					local shamt = bit.band(imm, 0x1F)
+
 
 					local decTabFnt3 = {
 						-- ADDI
 						function ()
-							cpu.regs.gp[rd] = bit.band(cpu.regs.gp[rs1] + imm, 0xFFFFFFFF)
+							cpu:access_register(rd, cpu:access_register(rs1) + imm)
 						end,
 						-- SLLI
 						function ()
+							local shamt = bit.band(imm, 0x1F)
 							if bit.rshift(bit.band(imm, 0xFE0), 5) ~= 0 then
-								cpu.regs.gp[rd] = bit.band(bit.lshift(cpu.regs.gp[rs1], shamt), 0xFFFFFFFF)
+								cpu:access_register(rd, bit.lshift(cpu:access_register(rs1), shamt))
 							else
-								return true
+								return false
 							end
 						end,
 						-- SLTI
 						function ()
-							if cpu.regs.gp[rs1] < imm then
-								cpu.regs.gp[rd] = 1
+							if cpu:access_register(rs1) < imm then
+								cpu:access_register(rd, 1)
 							else
-								cpu.regs.gp[rd] = 0
+								cpu:access_register(rd, 0)
 							end
 						end,
 						-- SLTIU
 						function ()
-							local rs1_value = cpu.regs.gp[rs1]
+							local rs1_value = cpu:access_register(rs1)
 
 							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(imm, 0x80000000)) == 0 then
 								if rs1_value < imm then
-									cpu.regs.gp[rd] = 1
+									cpu:access_register(rd, 1)
 								end
 							else
 								if not (rs1_value > imm) then
-									cpu.regs.gp[rd] = 0
+									cpu:access_register(rd, 0)
 								end
 							end
 						end,
 						-- XORI
 						function ()
-							cpu.regs.gp[rd] = bit.bxor(cpu.regs.gp[rs1], imm)
+							cpu:access_register(rd, bit.bxor(cpu:access_register(rs1), imm))
 						end,
 						-- SRLI/SRAI
 						function ()
+							local shamt = bit.band(imm, 0x1F)
+
 							local imm11_5 = bit.band(imm, 0xFE0)
 							local op
 							if imm11_5 == 0 then
@@ -877,15 +903,15 @@ function rv.decode_rv32i (cpu, cmd)
 								op = bit.arshift
 							end
 
-							cpu.regs.gp[rd] = bit.band(op(cpu.regs.gp[rs1], shamt), 0xFFFFFFFF)
+							cpu:access_register(rd, bit.band(op(cpu:access_register(rs1), shamt), 0xFFFFFFFF))
 						end,
 						-- ORI
 						function ()
-							cpu.regs.gp[rd] = bit.bor(cpu.regs.gp[rs1], imm)
+							cpu:access_register(rd, bit.bor(cpu:access_register(rs1), imm))
 						end,
 						-- ANDI
 						function ()
-							cpu.regs.gp[rd] = bit.band(cpu.regs.gp[rs1], imm)
+							cpu:access_register(rd, bit.band(cpu:access_register(rs1), imm))
 						end
 					}
 
@@ -893,53 +919,52 @@ function rv.decode_rv32i (cpu, cmd)
 					if func == nil then return false end
 					local retval = func()
 
-					rv.update_pc(cpu)
+					cpu:update_pc(false)
 					return retval
 				end,
 				-- ========== 01
 				function ()
-					local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20) + 1
+					local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20)
 					local fnt7 = bit.rshift(bit.band(cmd, 0xFE0000000), 29)
 
 					local decTabFnt3 = {
 						-- ADD/SUB
 						function ()
 							if fnt7 == 0 then
-								cpu.regs.gp[rd] = bit.band(cpu.regs.gp[rs1] + cpu.regs.gp[rs2], 0xFFFFFFFF)
+								cpu:access_register(rd, cpu:access_register(rs1) + cpu:access_register(rs2))
 							elseif fnt7 ~= 0 then
-								cpu.regs.gp[rd] = bit.band(cpu.regs.gp[rs1] - cpu.regs.gp[rs2], 0xFFFFFFFF)
+								cpu:access_register(rd, cpu:access_register(rs1) - cpu:access_register(rs2))
 							end
 
 							return true
 						end,
 						-- SLL
 						function ()
-							cpu.regs.gp[rd] = bit.band(bit.lshift(cpu.regs.gp[rs1], cpu.regs.gp[rs2]))
-
+							cpu:access_register(rd, bit.lshift(cpu:access_register(rs1), cpu:access_register(rs2)))
 							return true
 						end,
 						-- SLT
 						function ()
-							if cpu.regs.gp[rs1] < cpu.regs.gp[rs2] then
-								cpu.regs.gp[rd] = 1
+							if cpu:access_register(rs1) < cpu:access_register(rs2) then
+								cpu:access_register(rd, 1)
 							else
-								cpu.regs.gp[rd] = 0
+								cpu:access_register(rd, 0)
 							end
 
 							return true
 						end,
 						-- SLTU
 						function ()
-							local rs1_value = cpu.regs.gp[rs1]
-							local rs2_value = cpu.regs.gp[rs2]
+							local rs1_value = cpu:access_register(rs1)
+							local rs2_value = cpu:access_register(rs2)
 
 							if bit.bxor(bit.band(rs1_value, 0x80000000), bit.band(rs2_value, 0x80000000)) == 0 then
 								if rs1_value < rs2_value then
-									cpu.regs.gp[rd] = 1
+									cpu:access_register(rd, 1)
 								end
 							else
 								if not (rs1_value > rs2_value) then
-									cpu.regs.gp[rd] = 0
+									cpu:access_register(rd, 0)
 								end
 							end
 
@@ -947,7 +972,7 @@ function rv.decode_rv32i (cpu, cmd)
 						end,
 						-- XOR
 						function ()
-							cpu.regs.gp[rd] = bit.bxor(cpu.regs.gp[rs1], cpu.regs.gp[rs2])
+							cpu:access_register(rd, bit.bxor(cpu:access_register(rs1), cpu:access_register(rs2)))
 							return true
 						end,
 						-- SRL/SRA
@@ -960,17 +985,17 @@ function rv.decode_rv32i (cpu, cmd)
 								op = bit.arshift
 							end
 
-							cpu.regs.gp[rd] = op(cpu.regs.gp[rs1], cpu.regs.gp[rs2])
+							cpu:access_register(rd, op(cpu:access_register(rs1), cpu:access_register(rs2)))
 							return true
 						end,
 						-- OR
 						function ()
-							cpu.regs.gp[rd] = bit.bor(cpu.regs.gp[rs1], cpu.regs.gp[rs2])
+							cpu:access_register(rd, bit.bor(cpu:access_register(rs1), cpu:access_register(rs2)))
 							return true
 						end,
 						-- AND
 						function ()
-							cpu.regs.gp[rd] = bit.band(cpu.regs.gp[rs1], cpu.regs.gp[rs2])
+							cpu:access_register(rd, bit.band(cpu:access_register(rs1), cpu:access_register(rs2)))
 							return true
 						end
 					}
@@ -979,7 +1004,7 @@ function rv.decode_rv32i (cpu, cmd)
 					if func == nil then return false end
 					local retval = func()
 
-					rv.update_pc(cpu)
+					cpu:update_pc(false)
 					return retval
 				end,
 				-- ========== 10
@@ -999,14 +1024,16 @@ function rv.decode_rv32i (cpu, cmd)
 		-- ========== 101
 		function ()
 			local imm20 = bit.band(cmd, 0xFFFFF000)
-			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7) + 1
+			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
 
 			local decTab6_5 = {
+				-- AUIPC
 				function ()
-					cpu.regs.gp[rd] = bit.band(cpu.regs.pc + imm20, 0xFFFFFFFF)
+					cpu:access_register(rd, cpu:access_pc() + imm20)
 				end,
+				-- LUI
 				function ()
-					cpu.regs.gp[rd] = imm20
+					cpu:access_register(rd, imm20)
 				end,
 				function ()
 					return nil
@@ -1019,7 +1046,7 @@ function rv.decode_rv32i (cpu, cmd)
 			local func = decTab6_5[decVal6_5()]
 			if func == nil then return false end
 
-			rv.update_pc(cpu)
+			cpu:update_pc(false)
 			return func()
 		end,
 		-- ========== 110
@@ -1037,20 +1064,19 @@ function rv.decode_rv32i (cpu, cmd)
 	if func == nil then return false end
 	retval = func()
 
-	cpu.regs.gp[1] = 0
 	return retval
 end
 
 function rv.decode (cpu)
-	local cmd = rv.fetch_instruction(cpu, true)
+	local cmd = cpu:fetch_instruction(true)
 	local retval1
 	local retval2
 
 	-- When instruction is C extension
 	if bit.band(cmd, 3) ~= 3 then
-		if cpu.conf.enable_rv32c then
+		if cpu.conf.enable_rv32c == nil or cpu.conf.enable_rv32c == false then
 			retval1 = rv.decode_rv32c(cpu, cmd)
-			cmd = rv.fetch_instruction(cpu, true)
+			cmd = cpu:fetch_instruction(true)
 			retval2 = rv.decode_rv32c(cpu, cmd)
 			if retval1 == nil and retval2 == nil then
 				return nil
@@ -1058,10 +1084,10 @@ function rv.decode (cpu)
 				return false
 			end
 		else
-			rv_throw("rv_decode: Unsupported extension.")
+			rv.throw("rv_decode: Unsupported extension.")
 		end
 	else
-		cmd = rv.fetch_instruction(cpu, false)
+		cmd = cpu:fetch_instruction(false)
 		retval1 = rv.decode_rv32i(cpu, cmd)
 	end
 
@@ -1254,7 +1280,14 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (5) create instance
 		function ()
-			if not rv.new_instance(id) then
+			if rv.instance[id] ~= nil then
+				rv.throw("rv.new_instance: Instance id already in use.")
+				return
+			end
+
+			local instance = Instance:new()
+
+			if instance == nil then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -1262,17 +1295,18 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				setReturn(0, 0)
 			end
 
+			rv.instance[id] = instance
+
 			return true
 		end,
 		-- (6) delete instance
 		function ()
-			if not rv.del_instance(id) then
-				setReturn(-1, -1)
-				setErrorLevel(1)
-				return false
-			else
-				setReturn(0, 0)
+			if rv.instance[id] == nil then
+				rv.throw("Configuration: API 6, delete failed. please restart the game.")
+				return
 			end
+
+			Instance:del()
 
 			return true
 		end,
@@ -1280,7 +1314,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		function ()
 			local cpu_number = getter('tmp3')
 			local adr = getter('tmp4')
-			local val = rv.raw_access_memory(rv.instance[id].cpu[cpu_number], adr, 3)
+			local instance = rv.instance[id]
+			local mem = instance.mem
+			local val = mem:raw_access(instance.cpu[cpu_number], adr, 3)
 
 			if val == nil then
 				rv.throw("Configuration: rv.access_memory is failed to read.")
@@ -1295,8 +1331,10 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			local cpu_number = getter('tmp3')
 			local adr = getter('tmp4')
 			local val = getter('tmp')
+			local instance = rv.instance[id]
+			local mem = instance.mem
 
-			rv.raw_access_memory(rv.instance[id].cpu[cpu_number], adr, 3, val)
+			mem:raw_access(instance.cpu[cpu_number], adr, 3, val)
 
 			setReturn(0, 0)
 			return true
@@ -1314,7 +1352,8 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (10) get debug info
 		function ()
 			local cpu_number = getter('tmp3')
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local instance = rv.instance[id]
+			local cpu = instance.cpu[cpu_number]
 			if not rv.print_debug_info(cpu) then
 				setErrorLevel(1)
 			end
@@ -1461,20 +1500,24 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		function ()
 			local base = getter('tmp3')
 			local size = getter('tmp4')
+			local instance = rv.instance[id]
+			local mem = instance.mem
 
 			local filename = tpt.input("File Load", "Which file do you want to open?")
 
-			rv.load_memory(id, base, size, filename)
+			mem:load_memory(base, size, filename)
 			return true
 		end,
 		-- (19) write file and dump memory
 		function ()
 			local base = getter('tmp3')
 			local size = getter('tmp4')
+			local instance = rv.instance[id]
+			local mem = instance.mem
 
 			local filename = tpt.input("File Dump", "What file do you want to print?")
 
-			rv.dump_memory(id, base, size, filename)
+			mem:dump_memory(base, size, filename)
 			return true
 		end,
 	}
@@ -1519,6 +1562,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 
 	local instance = rv.instance[getter('ctype')]
 	if instance == nil then return end
+	local mem = instance.mem
 
 	local ptr = getter('life')
 	local detected_pscn
@@ -1544,7 +1588,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				local found = tpt.get_property('type', x + rx, y + ry)
 
 				if found == elements.DEFAULT_PT_FILT then
-					local value = rv.raw_access_memory(instance.mem, ptr, 3)
+					local value = mem:raw_access(ptr, 3)
 					value = value + 0x10000000 -- serialization
 					tpt.set_property('ctype', value, x + rx, y + ry)
 				end
@@ -1558,7 +1602,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				if found == elements.DEFAULT_PT_FILT then
 					local value = tpt.get_property('ctype', x + rx, y + ry)
 					value = value - 0x10000000 -- deserialization
-					rv.raw_access_memory(instance.mem, ptr, 3, value)
+					mem:raw_access(ptr, 3, value)
 				end
 			end
 		end
