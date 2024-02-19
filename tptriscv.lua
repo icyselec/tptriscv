@@ -392,18 +392,6 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 	return retval
 end
 
--- deprecated warning
-function rv.load_test_code (instanceId)
-	local cpu_ctx = rv.context.cpu[instanceId]
-	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
-	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
-	rv.access_memory(cpu_ctx, 4096, 3, 0x6c6c6548)
-	rv.access_memory(cpu_ctx, 4100, 3, 0x77202c6f)
-	rv.access_memory(cpu_ctx, 4104, 3, 0x646c726f)
-	rv.access_memory(cpu_ctx, 4108, 3, 0x00000a21)
-	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
-end
-
 function rv.string_to_memory (id, begin, value)
 	local cpu_ctx = rv.context.cpu[id]
 	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
@@ -1231,6 +1219,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (9) load test program
 		function ()
+			return -- deprecated, do not use!
 			rv.load_test_code(id)
 
 			setReturn(0, 0)
@@ -1351,8 +1340,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			tpt.message_box("RISC-V Memory Dump", "beg: " .. tostring(beg) .. ", max: " .. tostring(max) .. "\n" .. msg)
 			return true
 		end,
-		-- (17) clipboard to RAM -- do not use!
+		-- (17) clipboard to RAM -- deprecated, do not use!
 		function ()
+			--[[
 			-- permission check
 			local perm = rv.try_permission("clipboard_access")
 			if perm == false then
@@ -1368,7 +1358,8 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 
 			setReturn(0, 0)
 			setErrorLevel(0)
-			return true
+			]]
+			return false
 		end,
 		-- (18) read file and load memory
 		function ()
