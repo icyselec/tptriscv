@@ -1427,7 +1427,13 @@ elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
 
 elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
-	local id = tpt.get_property('ctype', x, y)
+	local function getter (prop_name) return tpt.get_property(prop_name, x, y) end
+	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
+
+	local cpu_ctx = rv.context.cpu[getter('ctype')]
+	if cpu_ctx == nil then return end
+
+	local ptr = getter('life')
 	local detected_pscn
 	local detected_nscn
 
@@ -1448,16 +1454,30 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	if detected_pscn then
 		for ry = -2, 2 do
 			for rx = -2, 2 do
-				local filt = tpt.get_property('type', x + rx, y + ry)
+				local found = tpt.get_property('type', x + rx, y + ry)
 
-				if filt == elements.DEFAULT_PT_FILT then
-					-- RvMemoryAccess(RvCtxCpu[id], )
+				if found == elements.DEFAULT_PT_FILT then
+					local value = rv.access_memory(rv.context.cpu[id], ptr, 3)
+					value = value + 0x10000000 -- serialization
+					tpt.set_property('ctype', value, x + rx, y + ry)
 				end
 			end
 		end
 	elseif detected_nscn then
+		for ry = -2, 2 do
+			for rx = -2, 2 do
+				local found = tpt.get_property('type', x + rx, y + ry)
 
+				if found == elements.DEFAULT_PT_FILT then
+					local value = tpt.get_property('ctype', x + rx, y + ry)
+					value = value - 0x10000000 -- deserialization
+					rv.access_memory(rv.context.cpu[id], ptr, 3, value)
+				end
+			end
+		end
 	end
+
+	return
 end)
 
 -- Also try Legend of Astrum!
