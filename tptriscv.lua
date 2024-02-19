@@ -43,6 +43,7 @@ end
 
 rv.context = {}
 rv.decode = {}
+rv.permissions = {}
 
 -- definition constants
 RV.MAX_MEMORY_WORD = 65536 -- 256 kiB limit
@@ -56,12 +57,47 @@ RV.EXTENSIONS = {"RV32I"}
 rv.context.cpu = {}
 rv.context.mem = {}
 
+-- definition of permissions
+rv.permissions.clipboard_access = nil
+
 function rv.panic ()
 
 end
 
 function rv.throw (msg)
 	print(msg)
+end
+
+function rv.get_permission (perm_name)
+	if rv.permissions[perm_name] == false then
+		return false
+	end
+
+	local title = "Grant Permission"
+	local failed = ""
+	local answer = ""
+	local msg = "Approve the following permissions with y (or Y), deny n (or N). (Note: This message will never appear again once you deny it until you restart the game.)"
+	msg = msg .. "\n" .. perm_name
+
+	while answer == "y" or answer == "Y" do
+		answer = tpt.input(msg .. failed)
+		if failed == "" and (answer ~= "n" or answer ~= "N") then
+			failed = "\n\nPlease answer correctly."
+		elseif answer == "n" or answer == "N" then
+			rv.permissions[perm_name] = false
+			return false
+		end
+	end
+
+	return true
+end
+
+function rv.try_permission (perm_name)
+	if rv.permissions[perm_name] == nil then
+		return rv.get_permission(perm_name)
+	elseif rv.permissions[perm_name] == false then
+		return false
+	else return true end
 end
 
 
@@ -77,13 +113,14 @@ function rv.new_cpu_instance (instanceId)
 			mem_id = instanceId,
 			freq = 1, -- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
 			exts = { "RV32I", "RV32C" },
-			enable_rv32c = false
+			enable_rv32c = false,
+			check_aligned = false
 		},
 		stat = {
 			is_halted = false,
 			is_aligned = true,
 			is_waiting = false,
-			check_aligned = true
+
 		},
 		regs = {
 			-- general-purpose register
@@ -205,7 +242,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
 
-			if cpu_ctx.stat.check_aligned then
+			if cpu_ctx.conf.check_aligned then
 				local sub_offset = bit.band(adr, 1)
 				if sub_offset ~= 0 then
 					report_error("LH", "Attempt to access unaligned memory.")
@@ -236,7 +273,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 				end,
 			}
 
-			if offset ~= 0 and cpu_ctx.stat.check_aligned then
+			if offset ~= 0 and cpu_ctx.conf.check_aligned then
 				report_error("LW", "Attempt to access unaligned memory.")
 				return
 			end
@@ -256,7 +293,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		-- LHU
 		function ()
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			if cpu_ctx.stat.check_aligned then
+			if cpu_ctx.conf.check_aligned then
 				local sub_offset = bit.band(adr, 1)
 				if sub_offset ~= 0 then
 					report_error("LHU", "Attempt to access unaligned memory.")
@@ -285,7 +322,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		end,
 		-- SH
 		function ()
-			if cpu_ctx.stat.check_aligned then
+			if cpu_ctx.conf.check_aligned then
 				local sub_offset = bit.band(adr, 1)
 				if sub_offset ~= 0 then
 					report_error("SH", "Attempt to access unaligned memory.")
@@ -301,7 +338,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		function ()
 			offset = bit.band(adr, 3)
 			if offset ~= 0 then
-				if cpu_ctx.stat.check_aligned then
+				if cpu_ctx.conf.check_aligned then
 					report_error("SW", "Attempt to access unaligned memory.")
 					return
 				elseif bit.band(offset, 2) == 0 then
@@ -390,15 +427,15 @@ function rv.decode_rv32c (cpu_ctx, inst)
 
 	local decTab1_0 = {
 		function ()
-			local rd_rs2 = bit.rshift(bit.band(inst, 0x1C), 2)
-			local rs1 = bit.rshift(bit.band(inst, 0x0380), 7)
-			local uimm = bit.rshift(bit.band(inst, 0x1C00), 7)
-			uimm = bit.bor(uimm, bit.rshift(bit.band(inst, 0x0040), 4))
-			uimm = bit.bor(uimm, bit.lshift(bit.band(inst, 0x0080), 1))
+			local rd_rs2 = bit.rshift(bit.band(inst, 0x0000001C), 2)
+			local rs1 = bit.rshift(bit.band(inst, 0x00000380), 7)
+			local uimm = bit.rshift(bit.band(inst, 0x00001C00), 7)
+			uimm = bit.bor(uimm, bit.rshift(bit.band(inst, 0x00000040), 4))
+			uimm = bit.bor(uimm, bit.lshift(bit.band(inst, 0x00000080), 1))
 
 			local decTabFnt3 = {
 				function ()
-					local nzuimm = bit.rshift(bit.band(inst, 0x1FE0), 5)
+					local nzuimm = bit.rshift(bit.band(inst, 0x00001FE0), 5)
 
 
 				end,
@@ -453,9 +490,9 @@ function rv.decode_rv32i (cpu_ctx, inst)
 	local decTab4_2 = {
 		-- ========== 000
 		function ()
-			local rd = bit.rshift(bit.band(inst, 0xF80), 7) + 1
-			local rs1 = bit.rshift(bit.band(inst, 0xF8000), 15) + 1
-			local rs2 = bit.rshift(bit.band(inst, 0x1F00000), 20) + 1 -- maybe plus one
+			local rd = bit.rshift(bit.band(inst, 0x00000F80), 7) + 1
+			local rs1 = bit.rshift(bit.band(inst, 0x000F8000), 15) + 1
+			local rs2 = bit.rshift(bit.band(inst, 0x01F00000), 20) + 1 -- maybe plus one
 			local imm = bit.arshift(bit.band(inst, 0xFFF00000), 20)
 
 			local decTab6_5 = {
@@ -474,7 +511,7 @@ function rv.decode_rv32i (cpu_ctx, inst)
 				-- SB/SH/SW
 				function ()
 					rv.update_pc(cpu_ctx)
-					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE00000), 20), rd-1)
+					local imm = bit.bor(bit.arshift(bit.band(inst, 0x0FE00000), 20), rd-1)
 					return rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
 				end,
 				function ()
