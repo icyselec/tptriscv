@@ -213,10 +213,12 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 	-- memory limit check
 	if bit.bxor(bit.band(ea, 0x80000000), bit.band(RV.MAX_MEMORY_WORD, 0x80000000)) == 0 then
 		if ea > RV.MAX_MEMORY_WORD then
+			rv.throw("rv.access_memory: Memory out of bound.")
 			return nil
 		end
 	else
 		if ea < RV.MAX_MEMORY_WORD then
+			rv.throw("rv.access_memory: Memory out of bound.")
 			return nil
 		end
 	end
@@ -288,7 +290,8 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		-- LBU
 		function ()
 			offset = bit.band(adr, 3)
-			return bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
+			local retval = bit.rshift(bit.band(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), offset * 8)
+			return retval
 		end,
 		-- LHU
 		function ()
@@ -297,7 +300,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 				local sub_offset = bit.band(adr, 1)
 				if sub_offset ~= 0 then
 					report_error("LHU", "Attempt to access unaligned memory.")
-					return
+					return nil
 				end
 			end
 
@@ -317,7 +320,8 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		-- SB
 		function ()
 			offset = bit.band(adr, 3)
-			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), bit.lshift(bit.band(val, 0xFF), offset * 8))
+			mem_ctx.data[ea] = bit.bor(bit.band(mem_ctx.data[ea], bit.bnot(bit.lshift(0xFF, offset * 8))), bit.lshift(bit.band(val, 0xFF), offset * 8))
+--			print(string.format("dest: 0x%X, data: 0x%X", bit.bxor(mem_ctx.data[ea], bit.lshift(0xFF, offset * 8)), val))
 			return true
 		end,
 		-- SH
@@ -331,7 +335,7 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 			end
 
 			offset = bit.rshift(bit.band(adr, 3), 1)
-			mem_ctx.data[ea] = bit.bor(bit.bxor(mem_ctx.data[ea], bit.lshift(0xFFFF, offset * 16)), bit.lshift(bit.band(val, 0xFFFF), offset * 16))
+			mem_ctx.data[ea] = bit.bor(bit.band(mem_ctx.data[ea], bit.bnot(bit.lshift(0xFFFF, offset * 16))), bit.lshift(bit.band(val, 0xFFFF), offset * 16))
 			return true
 		end,
 		-- SW
@@ -340,14 +344,15 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 			if offset ~= 0 then
 				if cpu_ctx.conf.check_aligned then
 					report_error("SW", "Attempt to access unaligned memory.")
-					return
+					return nil
 				elseif bit.band(offset, 2) == 0 then
 					rv.access_memory(cpu_ctx, adr, 2, val)
 					val = bit.rshift(val, 16)
 					rv.access_memory(cpu_ctx, adr + 2, 2, val)
+					return true
 				else
 					report_error("SW", "Attempt to access unaligned memory.")
-					return
+					return nil
 				end
 			end
 
@@ -374,12 +379,21 @@ function rv.access_memory (cpu_ctx, adr, mod, val)
 		func = wrOpTab[mod]
 	end
 
+
+
 	if func == nil then return nil end
 	retval = func()
+
+	if retval == nil then
+		rv.throw("rv.access_memory: Not implemented instruction dectected. processor is halted.")
+		cpu_ctx.stat.is_halted = true
+		return nil
+	end
 
 	return retval
 end
 
+-- deprecated warning
 function rv.load_test_code (instanceId)
 	local cpu_ctx = rv.context.cpu[instanceId]
 	rv.context.mem[instanceId].data = {0x00001537,0x008000ef,0x0000006f,0x00000293,0x00a28333,0x00034303,0x00030663,0x00128293,0xff1ff06f,0x00028513,0x00008067}
@@ -389,6 +403,49 @@ function rv.load_test_code (instanceId)
 	rv.access_memory(cpu_ctx, 4104, 3, 0x646c726f)
 	rv.access_memory(cpu_ctx, 4108, 3, 0x00000a21)
 	setmetatable(rv.context.mem[instanceId].data, { __index = function(self) return 0 end })
+end
+
+function rv.string_to_memory (id, begin, value)
+	local cpu_ctx = rv.context.cpu[id]
+	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
+
+	-- Not Implemeted
+
+end
+
+function rv.load_memory (id, base, size, filename)
+	local cpu_ctx = rv.context.cpu[id]
+	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
+
+	local f = assert(io.open(filename, "rb"))
+	local i = 0
+
+	for line in f:lines() do
+		rv.access_memory(cpu_ctx, base + i, 3, tonumber(line, 16))
+		if i > size then
+			break
+		end
+
+		i = i + 4
+	end
+--	setmetatable(mem_ctx.data, { __index = function(self) return 0 end })
+	f:close()
+end
+
+function rv.dump_memory (id, base, size, filename)
+	local cpu_ctx = rv.context.cpu[id]
+	local mem_ctx = rv.context.mem[cpu_ctx.conf.mem_id]
+
+	local f = assert(io.open(filename, "wb"))
+	local i = 0
+
+	repeat
+		local data = rv.access_memory(cpu_ctx, base + i, 3)
+		f:write(string.format("%X\n", data))
+		i = i + 4
+	until i > size
+
+	f:close()
 end
 
 function rv.fetch_instruction (cpu_ctx, compact_mode)
@@ -510,17 +567,18 @@ function rv.decode_rv32i (cpu_ctx, inst)
 				end,
 				-- SB/SH/SW
 				function ()
+					local imm = bit.bor(bit.arshift(bit.band(inst, 0xFE000000), 20), rd-1)
+					local retval = rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), cpu_ctx.regs.gp[rs2])
 					rv.update_pc(cpu_ctx)
-					local imm = bit.bor(bit.arshift(bit.band(inst, 0x0FE00000), 20), rd-1)
-					return rv.access_memory(cpu_ctx, cpu_ctx.regs.gp[rs1] + imm, decValFnt3(), ctx.regs.gp[rs2])
+					return retval
 				end,
 				function ()
 					return nil
 				end,
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
 				function ()
-					local rs1_value = cpu_ctx.regs.gp[rs1]
-					local rs2_value = cpu_ctx.regs.gp[rs2]
+					local rs1_value = bit.bor(cpu_ctx.regs.gp[rs1], 0)
+					local rs2_value = bit.bor(cpu_ctx.regs.gp[rs2], 0)
 
 					local imm = bit.band(inst, 0x80000000)
 					imm = bit.bor(imm, bit.rshift(bit.band(inst, 0x7E000000), 1))
@@ -755,7 +813,7 @@ function rv.decode_rv32i (cpu_ctx, inst)
 								op = bit.arshift
 							end
 
-							cpu_ctx.regs.gp[rd] = op(cpu_ctx.regs[rs1], shamt)
+							cpu_ctx.regs.gp[rd] = bit.band(op(cpu_ctx.regs.gp[rs1], shamt), 0xFFFFFFFF)
 						end,
 						-- ORI
 						function ()
@@ -997,9 +1055,10 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	local cpu_ctx = rv.context.cpu[instanceId]
 	local freq = cpu_ctx.conf.freq
 
-	if not cpu_ctx.stat.is_waiting then
+	if not cpu_ctx.stat.is_halted then
 		for i = 1, freq do
 			rv.decode(cpu_ctx)
+			if cpu_ctx.stat.is_halted then break end
 		end
 	end
 
@@ -1247,9 +1306,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			local msg = ""
 
 			for i = 0, 31 do
-				msg = msg .. "R" .. tostring(i) .. ": " .. string.format("0x%X\n", cpu_ctx.regs.gp[i+1])
+				msg = msg .. "R" .. tostring(i) .. ":\t" .. string.format("0x%X\n", cpu_ctx.regs.gp[i+1])
 			end
-			msg = msg .. "\nPC: " .. string.format("0x%X", cpu_ctx.regs.pc)
+			msg = msg .. "PC:\t" .. string.format("0x%X", cpu_ctx.regs.pc)
 
 			tpt.message_box("RISC-V Register Dump", msg)
 
@@ -1291,6 +1350,45 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			end
 
 			tpt.message_box("RISC-V Memory Dump", "beg: " .. tostring(beg) .. ", max: " .. tostring(max) .. "\n" .. msg)
+			return true
+		end,
+		-- (17) clipboard to RAM -- do not use!
+		function ()
+			-- permission check
+			local perm = rv.try_permission("clipboard_access")
+			if perm == false then
+				setReturn(-1, -1)
+				setErrorLevel(2)
+				return false
+			end
+
+			local beg = getter('tmp3')
+
+			local str = tpt.get_clipboard()
+			rv.string_to_memory(id, beg, str)
+
+			setReturn(0, 0)
+			setErrorLevel(0)
+			return true
+		end,
+		-- (18) read file and load memory
+		function ()
+			local base = getter('tmp3')
+			local size = getter('tmp4')
+
+			local filename = tpt.input("File Load", "Which file do you want to open?")
+
+			rv.load_memory(id, base, size, filename)
+			return true
+		end,
+		-- (19) write file and dump memory
+		function ()
+			local base = getter('tmp3')
+			local size = getter('tmp4')
+
+			local filename = tpt.input("File Dump", "What file do you want to print?")
+
+			rv.dump_memory(id, base, size, filename)
 			return true
 		end,
 	}
