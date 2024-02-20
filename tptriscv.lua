@@ -110,7 +110,7 @@ function Cpu:access_gp (r, v)
 
 	if v == nil then
 		return self.regs.gp[r]
-	elseif v == 1 then -- write protection to zero register
+	elseif r == 1 then -- write protection to zero register
 		return
 	end
 
@@ -330,7 +330,7 @@ function Mem:access (core, addr, mode, data)
 					return self.data[ea]
 				end,
 				function ()
-					report_error("LW", "Not Supported load halfword using byte-addressing.")
+					report_error("LW", "Not Supported load word using byte-addressing.")
 					return
 				end,
 				function ()
@@ -338,7 +338,7 @@ function Mem:access (core, addr, mode, data)
 					return bit.bor(retval, bit.lshift(self:access(core, addr + 2, 6), 16))
 				end,
 				function ()
-					report_error("LW", "Not Supported load halfword using byte-addressing.")
+					report_error("LW", "Not Supported load word using byte-addressing.")
 					return
 				end,
 			}
@@ -757,7 +757,7 @@ function Cpu:decode_rv32c (cmd)
 								return nil
 							end
 
-							self:access_gp(rd, bit.rshift(self:access_gp(rd), rs2)
+							self:access_gp(rd, bit.rshift(self:access_gp(rd), rs2))
 							self:update_pc(true)
 							return true
 						end,
@@ -769,7 +769,7 @@ function Cpu:decode_rv32c (cmd)
 								return nil
 							end
 
-							self:access_gp(rd, bit.arshift(self:access_gp(rd), rs2)
+							self:access_gp(rd, bit.arshift(self:access_gp(rd), rs2))
 							self:update_pc(true)
 							return true
 						end,
@@ -845,7 +845,7 @@ function Cpu:decode_rv32c (cmd)
 					imm8 = bit.arshift(imm8, 26)
 
 					if self:access_gp(bit.band(rs1, 0x7)) == 0 then
-						self:access_pc(self:access_pc + imm8)
+						self:access_pc(self:access_pc() + imm8)
 						return true
 					end
 
@@ -862,7 +862,7 @@ function Cpu:decode_rv32c (cmd)
 					imm8 = bit.arshift(imm8, 26)
 
 					if self:access_gp(bit.band(rs1, 0x7)) ~= 0 then
-						self:access_pc(self:access_pc + imm8)
+						self:access_pc(self:access_pc() + imm8)
 						return true
 					end
 
@@ -887,7 +887,7 @@ function Cpu:decode_rv32c (cmd)
 						return false
 					end
 
-					self:access_gp(rd, bit.lshift(self:access_gp(), nzuimm)
+					self:access_gp(rd, bit.lshift(self:access_gp(rd), nzuimm))
 					self:update_pc(true)
 					return true
 				end,
@@ -901,11 +901,11 @@ function Cpu:decode_rv32c (cmd)
 				function ()
 					local mem = self.ref_mem
 					local uimm = imm1 + bit.rshift(bit.band(cmd, 0x0070), 2) + bit.lshift(bit.band(cmd, 0x00C0), 4)
-					self:access_gp(rd, mem:(self, self:access_gp(2) + uimm, 3))
+					self:access_gp(rd, mem:access(self, self:access_gp(2) + uimm, 3))
 					self:update_pc(true)
 				end,
 				-- C.FLWSP (Not Implement)
-				function () return
+				function ()
 					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
 					self:access_stat("online", false)
 					return nil
@@ -948,7 +948,7 @@ function Cpu:decode_rv32c (cmd)
 				function ()
 					local mem = self.ref_mem
 					local uimm = bit.lshift(rs1, 2) + bit.rshift(bit.band(cmd, 0x1000), 5)
-					self:access_gp(rd, mem:(self, self:access_gp(2) + uimm, 3, self:access_gp(rs2)))
+					self:access_gp(rd, mem:access(self, self:access_gp(2) + uimm, 3, self:access_gp(rs2)))
 					self:update_pc(true)
 				end,
 				-- C.FSWSP (Not Implement)
@@ -1092,9 +1092,8 @@ function Cpu:decode_rv32i (cmd)
 					local func = decTabFnt3[decValFnt3()]
 					local retval = func()
 
-					if not retval then self:update_pc(false) end
-
-					if retval then
+					if not retval then self:update_pc(false)
+					elseif retval then
 						local imm = bit.band(cmd, 0x80000000)
 						imm = bit.bor(imm, bit.rshift(bit.band(cmd, 0x7E000000), 1))
 						imm = bit.bor(imm, bit.lshift(bit.band(cmd, 0x00000080), 23))
@@ -1175,7 +1174,7 @@ function Cpu:decode_rv32i (cmd)
 				-- JAL
 				function ()
 					self:access_gp(rd, self:access_pc() + 4)
-					self:access_pc(self.regs.pc + imm20)
+					self:access_pc(self:access_pc() + imm20)
 				end,
 			}
 
@@ -1198,10 +1197,12 @@ function Cpu:decode_rv32i (cmd)
 						-- SLLI
 						function ()
 							local shamt = bit.band(imm, 0x1F)
-							if bit.rshift(bit.band(imm, 0xFE0), 5) ~= 0 then
+							if bit.rshift(bit.band(imm, 0xFE0), 5) == 0 then
 								self:access_gp(rd, bit.lshift(self:access_gp(rs1), shamt))
 							else
-								return false
+								rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+								self:access_stat("online", false)
+								return nil
 							end
 						end,
 						-- SLTI
@@ -1234,12 +1235,16 @@ function Cpu:decode_rv32i (cmd)
 						function ()
 							local shamt = bit.band(imm, 0x1F)
 
-							local imm11_5 = bit.band(imm, 0xFE0)
+							local imm11_5 = bit.rshift(bit.band(imm, 0xFE0), 5)
 							local op
 							if imm11_5 == 0 then
 								op = bit.rshift
-							elseif imm11_5 ~= 0 then
+							elseif imm11_5 == 0x20 then
 								op = bit.arshift
+							else
+								rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+								self:access_stat("online", false)
+								return nil
 							end
 
 							self:access_gp(rd, bit.band(op(self:access_gp(rs1), shamt), 0xFFFFFFFF))
@@ -1417,13 +1422,13 @@ function Cpu:decode ()
 
 	-- When instruction is C extension
 	if bit.band(cmd, 3) ~= 3 then
-		if self.conf.enable_rv32c == nil or self.conf.enable_rv32c == false then
+		if self.conf.enable_rv32c == true then
 			retval = self:decode_rv32c(cmd)
 			if retval == nil then
 				return nil
-			else
+			end
 		else
-			rv.throw("rv_decode: Unsupported extension.")
+			rv.throw("Cpu:decode: Unsupported extension.")
 		end
 	else
 		cmd = self:fetch_instruction(false)
@@ -1756,7 +1761,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (15) register dump
 		function ()
 			local cpu_number = getter('tmp3')
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local cpu = rv.instance[id].cpu[cpu_number+1]
 
 			if cpu == nil then
 				tpt.message_box("Error", "Invalid instance ID.")
