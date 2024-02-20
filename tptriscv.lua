@@ -41,7 +41,6 @@ do
 	setfenv(1, env)
 end
 
-rv.context = {}
 rv.decode = {}
 rv.permissions = {}
 
@@ -147,12 +146,20 @@ function Cpu:access_pc (v)
 	end
 end
 
-function Cpu:access_stat(name, status)
+function Cpu:access_stat (name, status)
 	if status == nil then
 		return self.stat[name]
 	else
 		self.stat[name] = status
 	end
+end
+
+function Cpu:halt (msg)
+
+end
+
+function Cpu:print_debug_info ()
+
 end
 
 
@@ -593,7 +600,7 @@ function Cpu:decode_rv32c (cmd)
 
 
 	local decTab1_0 = {
-		-- C.ADDI4SPN/C.FLD/C.LW/C.FLW/Reserved/C.FSD/C.SW/C.FSW
+		-- ==================== 00, C.ADDI4SPN/C.FLD/C.LW/C.FLW/Reserved/C.FSD/C.SW/C.FSW
 		function ()
 			local rd = bit.rshift(bit.band(cmd, 0x001C), 2)
 			local rs1 = bit.rshift(bit.band(cmd, 0x0380), 7)
@@ -615,45 +622,256 @@ function Cpu:decode_rv32c (cmd)
 					self:access_gp(rd, self:access_gp(2) + nzuimm)
 					return true
 				end,
-				-- C.FLD
-				function () return nil end, -- Not usable
+				-- C.FLD -- not yet implemented
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- C.LW
 				function ()
 					local mem = self.ref_mem
 					self:access_gp(rd, mem:access(self, self:access_gp(rs1) + uimm, 3))
 				end,
 				-- C.FLW
-				function () return nil end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- Reserved
-				function () return nil end,
-				-- C.FSD
-				function () return nil end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
+				-- C.FSD -- not yet implemented
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- C.SW
 				function ()
 					local mem = self.ref_mem
 					mem:access(self, self:access_gp(rs1) + uimm, 3, self:access_gp(rd_rs2))
 				end,
 				-- C.FSW
-				function () return nil end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 			}
-			local func = decTabFnt3[decValFnt3()]
-			if func == nil then return false end
-			local retval = func()
 
-			return retval
+			return decTabFnt3[decValFnt3()]()
 		end,
+		-- ==================== 01,
 		function ()
+			local rs1 = bit.rshift(bit.band(cmd, 0x0F80), 7)
+			local rs2 = bit.rshift(bit.band(cmd, 0x007C), 2)
+
 			local decTabFnt3 = {
-				function () end,
-				function () end,
-				function () end,
-				function () end,
-				function () end,
-				function () end,
-				function () end,
-				function () end,
+				-- C.NOP/C.ADDI
+				function ()
+					local  imm6 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm6 = imm6 + bit.lshift(rs2, 28)
+					imm6 = bit.arshift(imm6, 26)
+
+					if rs1 == 0 and imm6 == 0 then
+						return true -- C.NOP
+					elseif imm6 == 0 then
+						return false
+					end
+
+					self:access_gp(rs1, self:access_gp(rs1) + imm6)
+					self:update_pc(true)
+					return true
+				end,
+				-- C.JAL (ADDIW is RV64/RV128 only)
+				function ()
+					local   imm11 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0100), 22)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0600), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0040), 17)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0080), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0004), 23)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0800), 14)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0038), 18)
+					imm11 = bit.arshift(imm11, 23)
+
+					self:access_gp(1, self:access_pc() + 2)
+					self:access_pc(self:access_pc() + imm11)
+				end,
+				-- C.LI
+				function ()
+					if rs1 == 0 then
+						return false
+					end
+
+					local  imm6 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm6 = imm6 + bit.lshift(rs2, 28)
+					imm6 = bit.arshift(imm6, 26)
+
+					self:access_gp(rs1, imm6)
+					self:update_pc(true)
+					return true
+				end,
+				-- C.ADDI16SP/C.LUI
+				function ()
+					-- HINT
+					if rs1 == 0 then
+						return false
+					-- C.ADDI16SP
+					elseif rs1 == 2 then
+						local     imm16sp = bit.lshift(bit.band(cmd, 0x1000), 19)
+						imm16sp = imm16sp + bit.lshift(bit.band(cmd, 0x0018), 26)
+						imm16sp = imm16sp + bit.lshift(bit.band(cmd, 0x0020), 23)
+						imm16sp = imm16sp + bit.lshift(bit.band(cmd, 0x0004), 25)
+						imm16sp = imm16sp + bit.lshift(bit.band(cmd, 0x0040), 20)
+						imm16sp = bit.arshift(imm16sp, 22)
+
+						self:access_gp(rs1, self:access_gp(rs1) + imm16sp)
+					-- C.LUI
+					else
+						local  imm6 = bit.lshift(bit.band(cmd, 0x1000), 19)
+						imm6 = imm6 + bit.lshift(rs2, 28)
+						imm6 = bit.arshift(imm6, 14)
+
+						self:access_gp(rs1, imm6)
+					end
+
+					self:update_pc(true)
+					return true
+				end,
+				-- C.SRLI/C.SRAI/C.ANDI/C.SUB/C.XOR/C.OR/C.AND
+				function ()
+					local rd = bit.band(rs1, 0x7)
+
+					local decTabFnt2 = {
+						-- C.SRLI
+						function ()
+							if bit.band(cmd, 0x1000) ~= 0 then
+								rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+								self:access_stat("online", false)
+								return nil
+							end
+
+							self:access_gp(rd, bit.rshift(self:access_gp(rd), rs2)
+							self:update_pc(true)
+							return true
+						end,
+						-- C.SRAI
+						function ()
+							if bit.band(cmd, 0x1000) ~= 0 then
+								rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+								self:access_stat("online", false)
+								return nil
+							end
+
+							self:access_gp(rd, bit.arshift(self:access_gp(rd), rs2)
+							self:update_pc(true)
+							return true
+						end,
+						-- C.ANDI
+						function ()
+							local imm6 = rs2 + bit.arshift(bit.lshift(bit.band(cmd, 0x1000), 19), 26)
+
+							self:access_gp(rd, bit.band(self:access_gp(rd), imm6))
+							self:update_pc(true)
+							return true
+						end,
+						-- C.SUB/C.XOR/C.OR/C.AND
+						function ()
+							local rs1 = bit.band(rs1, 0x7)
+							local rs2 = bit.band(rs2, 0x7)
+							local rd = rs1
+
+							if bit.band(cmd, 0x1000) ~= 0 then
+								rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+								self:access_stat("online", false)
+								return nil
+							end
+
+							local decTabSubFnt2 = {
+								function ()
+									self:access_gp(rd, self:access_gp(rs1) - self:access_gp(rs2))
+									return true
+								end,
+								function ()
+									self:access_gp(rd, bit.bxor(self:access_gp(rs1), self:access_gp(rs2)))
+									return true
+								end,
+								function ()
+									self:access_gp(rd, bit.bor(self:access_gp(rs1), self:access_gp(rs2)))
+									return true
+								end,
+								function ()
+									self:access_gp(rd, bit.band(self:access_gp(rs1), self:access_gp(rs2)))
+									return true
+								end,
+							}
+
+							local retval = decTabSubFnt2[bit.rshift(bit.band(cmd, 0x0060), 5) + 1]()
+							self:update_pc(true)
+							return retval
+						end,
+					}
+
+					return decTabFnt2[bit.rshift(bit.band(cmd, 0x0C00), 10) + 1]()
+				end,
+				-- C.J
+				function ()
+					local   imm11 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0100), 22)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0600), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0040), 17)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0080), 19)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0004), 23)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0800), 14)
+					imm11 = imm11 + bit.lshift(bit.band(cmd, 0x0038), 18)
+					imm11 = bit.arshift(imm11, 23)
+
+					self:access_pc(self:access_pc() + imm11)
+					return true
+				end,
+				-- C.BEQZ
+				function ()
+					local  imm8 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0060), 24)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0004), 26)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0C00), 16)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0018), 21)
+					imm8 = bit.arshift(imm8, 26)
+
+					if self:access_gp(bit.band(rs1, 0x7)) == 0 then
+						self:access_pc(self:access_pc + imm8)
+						return true
+					end
+
+					self:update_pc(true)
+					return false
+				end,
+				-- C.BNEZ
+				function ()
+					local  imm8 = bit.lshift(bit.band(cmd, 0x1000), 19)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0060), 24)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0004), 26)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0C00), 16)
+					imm8 = imm8 + bit.lshift(bit.band(cmd, 0x0018), 21)
+					imm8 = bit.arshift(imm8, 26)
+
+					if self:access_gp(bit.band(rs1, 0x7)) ~= 0 then
+						self:access_pc(self:access_pc + imm8)
+						return true
+					end
+
+					self:update_pc(true)
+					return false
+				end,
 			}
 		end,
+		-- ==================== 10,
 		function ()
 			local rd = bit.rshift(bit.band(cmd, 0x0F80), 7)
 			local rs1 = rd
@@ -669,70 +887,83 @@ function Cpu:decode_rv32c (cmd)
 						return false
 					end
 
-					cpu:access_gp(rd, bit.lshift(cpu:access_gp(), nzuimm)
-					cpu:update_pc(true)
+					self:access_gp(rd, bit.lshift(self:access_gp(), nzuimm)
+					self:update_pc(true)
 					return true
 				end,
 				-- C.FLDSP
-				function () end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- C.LWSP
 				function ()
-					local mem = cpu.ref_mem
+					local mem = self.ref_mem
 					local uimm = imm1 + bit.rshift(bit.band(cmd, 0x0070), 2) + bit.lshift(bit.band(cmd, 0x00C0), 4)
-					cpu:access_gp(rd, mem:(cpu, cpu:access_gp(2) + uimm, 3))
+					self:access_gp(rd, mem:(self, self:access_gp(2) + uimm, 3))
+					self:update_pc(true)
 				end,
 				-- C.FLWSP (Not Implement)
-				function () return nil end,
+				function () return
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- C.JR/C.MV/C.EBREAK/C.JALR/C.ADD
 				function ()
 					if bit.band(cmd, 0x1000) == 0 then
 						-- C.MV
 						if rd ~= 0 and rs2 ~= 0 then
-							cpu:access_gp(rd, cpu:access_gp(rs2))
-							return true
+							self:access_gp(rd, self:access_gp(rs2))
+							self:update_pc(true)
 						-- C.JR
 						elseif rd ~= 0 and rs2 == 0 then
-							cpu:access_pc(cpu:access_gp(rs1))
-							return true
+							self:access_pc(self:access_gp(rs1))
 						end
 					else
 						-- C.EBREAK
 						if rs1 == 0 and rs2 == 0 then
 
-							return true
 						-- C.JALR
 						elseif rs1 ~= 0 and rs2 == 0 then
-							local backup = cpu:access_gp(rs1)
-							cpu:access_gp(1, cpu:access_pc() + 2)
-							cpu:access_pc(backup)
-							return true
+							local backup = self:access_gp(rs1)
+							self:access_gp(1, self:access_pc() + 2)
+							self:access_pc(backup)
 						elseif rs1 ~= 0 and rs2 ~= 0 then
-							cpu:access_gp(rd, cpu:access_gp(rs1) + cpu:access_gp(rs2))
-							return true
+							self:access_gp(rd, self:access_gp(rs1) + self:access_gp(rs2))
+							self:update_pc(true)
 						end
-
 					end
+
+					return true
 				end,
 				-- C.FSDSP
-				function () end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 				-- C.SWSP
 				function ()
-					local mem = cpu.ref_mem
+					local mem = self.ref_mem
 					local uimm = bit.lshift(rs1, 2) + bit.rshift(bit.band(cmd, 0x1000), 5)
-					cpu:access_gp(rd, mem:(cpu, cpu:access_gp(2) + uimm, 3, cpu:access_gp(rs2)))
+					self:access_gp(rd, mem:(self, self:access_gp(2) + uimm, 3, self:access_gp(rs2)))
+					self:update_pc(true)
 				end,
 				-- C.FSWSP (Not Implement)
-				function () return nil end,
+				function ()
+					rv.throw("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
+					return nil
+				end,
 			}
 
+			return decTabFnt3[decValFnt3()]()
 		end,
 	}
 
-	local func = decTab1_0[decVal1_0()]
-	if func == nil then return false end
-	local retval = func()
-
-	return retval
+	return decTab1_0[decVal1_0()]()
 end
 
 function Cpu:decode_rv32i (cmd)
@@ -757,22 +988,24 @@ function Cpu:decode_rv32i (cmd)
 			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
 			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
 			local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20)
-			local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
+
 
 			local decTab6_5 = {
+				-- LB/LH/LW/LBU/LHU
 				function ()
-					-- LB/LH/LW/LBU/LHU
+					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
 					self:access_gp(rd, mem:access(self, self:access_gp(rs1) + imm, decValFnt3()))
 					self:update_pc(false)
 				end,
 				-- SB/SH/SW
 				function ()
 					local imm = bit.bor(bit.arshift(bit.band(cmd, 0xFE000000), 20), rd)
-					local retval = mem:access(self, self:access_gp(rs1) + imm, decValFnt3(), self:access_gp(rs2))
+					mem:access(self, self:access_gp(rs1) + imm, decValFnt3(), self:access_gp(rs2))
 					self:update_pc(false)
-					return retval
 				end,
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
@@ -857,7 +1090,6 @@ function Cpu:decode_rv32i (cmd)
 					}
 
 					local func = decTabFnt3[decValFnt3()]
-					if func == nil then return false end
 					local retval = func()
 
 					if not retval then self:update_pc(false) end
@@ -876,20 +1108,24 @@ function Cpu:decode_rv32i (cmd)
 				end,
 			}
 
-			local func = decTab6_5[decVal6_5()]
-			if func == nil then return nil end
-			return func()
+			return decTab6_5[decVal6_5()]()
 		end,
 		-- ========== 001
 		function ()
 			local decTab6_5 = {
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				-- JALR
@@ -909,14 +1145,12 @@ function Cpu:decode_rv32i (cmd)
 				end,
 			}
 
-			local func = decTab6_5[decVal6_5()]
-			if func == nil then return false end
-			local retval = func()
-
-			return retval
+			return decTab6_5[decVal6_5()]()
 		end,
 		-- ========== 010
 		function ()
+			rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			self:access_stat("online", false)
 			return nil
 		end,
 		-- ========== 011
@@ -944,11 +1178,8 @@ function Cpu:decode_rv32i (cmd)
 					self:access_pc(self.regs.pc + imm20)
 				end,
 			}
-			local func = decTab6_5[decVal6_5()]
-			if func == nil then return false end
-			local retval = func()
 
-			return retval
+			return decTab6_5[decVal6_5()]()
 		end,
 		-- ========== 100
 		function ()
@@ -958,7 +1189,6 @@ function Cpu:decode_rv32i (cmd)
 				-- ========== 00
 				function ()
 					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
-
 
 					local decTabFnt3 = {
 						-- ADDI
@@ -1023,10 +1253,7 @@ function Cpu:decode_rv32i (cmd)
 							self:access_gp(rd, bit.band(self:access_gp(rs1), imm))
 						end
 					}
-
-					local func = decTabFnt3[decValFnt3()]
-					if func == nil then return false end
-					local retval = func()
+					local retval = decTabFnt3[decValFnt3()]()
 
 					self:update_pc(false)
 					return retval
@@ -1108,20 +1335,21 @@ function Cpu:decode_rv32i (cmd)
 							return true
 						end
 					}
-
-					local func = decTabFnt3[decValFnt3()]
-					if func == nil then return false end
-					local retval = func()
+					local retval = decTabFnt3[decValFnt3()]()
 
 					self:update_pc(false)
 					return retval
 				end,
 				-- ========== 10
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				-- ========== 11
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end
 			}
@@ -1145,9 +1373,13 @@ function Cpu:decode_rv32i (cmd)
 					self:access_gp(rd, imm20)
 				end,
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 				function ()
+					rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					self:access_stat("online", false)
 					return nil
 				end,
 			}
@@ -1160,12 +1392,15 @@ function Cpu:decode_rv32i (cmd)
 		end,
 		-- ========== 110
 		function ()
+			rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			self:access_stat("online", false)
 			return nil
 		end,
 		-- ========== 111 Not Supported other instruction length
 		function ()
-			rv.throw("rv32i_decode: Invalid instruction.")
-			return false
+			rv.throw("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			self:access_stat("online", false)
+			return nil
 		end
 	}
 
@@ -1178,29 +1413,24 @@ end
 
 function Cpu:decode ()
 	local cmd = self:fetch_instruction(true)
-	local retval1
-	local retval2
+	local retval
 
 	-- When instruction is C extension
 	if bit.band(cmd, 3) ~= 3 then
 		if self.conf.enable_rv32c == nil or self.conf.enable_rv32c == false then
-			retval1 = self:decode_rv32c(cmd)
-			cmd = self:fetch_instruction(true)
-			retval2 = self:decode_rv32c(cmd)
-			if retval1 == nil and retval2 == nil then
+			retval = self:decode_rv32c(cmd)
+			if retval == nil then
 				return nil
 			else
-				return false
-			end
 		else
 			rv.throw("rv_decode: Unsupported extension.")
 		end
 	else
 		cmd = self:fetch_instruction(false)
-		retval1 = self:decode_rv32i(cmd)
+		retval = self:decode_rv32i(cmd)
 	end
 
-	return retval1
+	return retval
 end
 
 local RVREGISTER
