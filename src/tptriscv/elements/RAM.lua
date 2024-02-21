@@ -1,8 +1,4 @@
-local RV = require("config")
-local tpt = require("tpt")
-local elements = require("elements")
-local elem = require("elem")
-
+local RV = require("tptriscv.constants.config")
 
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "RAM")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))

@@ -1,5 +1,7 @@
-local Cpu = require("Cpu")
-local Mem = require("Mem")
+local Cpu = require("tptriscv.classes.Cpu")
+local Mem = require("tptriscv.classes.Mem")
+local CpuConfig = require("tptriscv.classes.CpuConfig")
+local CpuStatus = require("tptriscv.classes.CpuStatus")
 
 ---@class Instance
 ---@field cpu Cpu
@@ -13,19 +15,21 @@ local Instance = {
 	stat = {},
 }
 
-Rv.instance = {}
-
 function Instance:new (o)
 	o = o or {}
 	setmetatable(o, self)
 	self.__index = self
 
+	o.cpu = {}
 	o.cpu[1] = Cpu:new()
+	o.cpu[1].conf = CpuConfig:new()
 	o.cpu[1].conf:set_config("ref_instance", o)
+	o.cpu[1].stat = CpuStatus:new()
 
 	o.mem = Mem:new()
 
-	o.cpu[1].ref_mem = o.mem
+	o.cpu[1].refs:add("instance", o)
+	o.cpu[1].refs:add("mem", o.mem)
 
 	return o
 end

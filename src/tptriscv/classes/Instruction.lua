@@ -1,8 +1,6 @@
---local tpt = require("tpt")
-local bit = require("bit")
-local Reg = require("Reg")
-local Integer = require("Integer")
-local RV = require("config")
+local Reg = require("tptriscv.classes.Reg")
+local Integer = require("tptriscv.classes.Integer")
+local RV = require("tptriscv.constants.config")
 
 ---@class Instruction
 ---@field core Cpu
@@ -34,10 +32,10 @@ function Instruction:fetch_instruction ()
 	---@type Cpu
 	local cpu = self.core
 	---@type Mem
-	local mem = cpu.ref_mem
+	local mem = cpu.refs.mem
 	self.cmds[1] = mem:safe_read(cpu, cpu.regs:get_pc(), 3) --[[@as u32]]
 
-	local bit1_0   = bit.band(self.cmds[1], 0x03)
+	local bit1_0 = bit.band(self.cmds[1], 0x03)
 
 	-- When instruction is C extension
 	if bit1_0 ~= 3 then
@@ -50,7 +48,7 @@ function Instruction:fetch_instruction ()
 		end
 	end
 
-	local bit4_2   = bit.rshift(bit.band(self.cmds[1], 0x001C), 2)
+	local bit4_2 = bit.rshift(bit.band(self.cmds[1], 0x001C), 2)
 
 	-- Standard 32-bit
 	if bit4_2 ~= 7 then
@@ -58,7 +56,7 @@ function Instruction:fetch_instruction ()
 		return true
 	end
 
-	local bit6_5   = bit.rshift(bit.band(self.cmds[1], 0x0060), 5)
+	local bit6_5 = bit.rshift(bit.band(self.cmds[1], 0x0060), 5)
 	self.cmds[2] = mem:safe_read(cpu, cpu.regs:get_pc() + 4, 3) --[[@as u32]]
 
 	-- Extended 48-bit
@@ -665,7 +663,7 @@ end
 function Instruction:decode_32bit (disasm)
 	local cpu = self.core
 	local reg = cpu.regs
-	local mem = cpu.ref_mem
+	local mem = cpu.refs.mem
 	local cmd = self.cmds[1]
 	local size = self.size
 
@@ -684,7 +682,7 @@ function Instruction:decode_32bit (disasm)
 	local decTab4_2 = {
 		-- ========== 000
 		function ()
-			local rd = bit.rshift(bit.band(cmd, 0x00000F80), 7)
+			local rd  = bit.rshift(bit.band(cmd, 0x00000F80), 7)
 			local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
 			local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20)
 
@@ -722,7 +720,7 @@ function Instruction:decode_32bit (disasm)
 				function ()
 					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
 					local fnt = decValFnt3()
-					reg:set_gp(rd, mem:safe_read(cpu, reg:get_gp(rs1) + imm, fnt) --[[@as u32]])
+					reg:set_gp(rd, mem:safe_read(cpu, reg:get_gp(rs1) + imm, fnt) --[[@as Integer]])
 					reg:update_pc(size)
 
 					if disasm then
@@ -764,11 +762,12 @@ function Instruction:decode_32bit (disasm)
 					local decTabFnt3 = {
 						-- BEQ
 						function ()
-							local target
+							local target = get_branch_target()
 
 							if rs1_value == rs2_value then
-								target = get_branch_target()
 								reg:set_pc(reg:get_pc() + target)
+							else
+								reg:update_pc(size)
 							end
 
 							if disasm then
@@ -777,11 +776,12 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- BNE
 						function ()
-							local target
+							local target = get_branch_target()
 
 							if rs1_value ~= rs2_value then
-								target = get_branch_target()
 								reg:set_pc(reg:get_pc() + target)
+							else
+								reg:update_pc(size)
 							end
 
 							if disasm then
@@ -790,11 +790,12 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- BLT
 						function ()
-							local target
+							local target = get_branch_target()
 
 							if rs1_value < rs2_value then
-								target = get_branch_target()
 								reg:set_pc(reg:get_pc() + target)
+							else
+								reg:update_pc(size)
 							end
 
 							if disasm then
@@ -803,11 +804,12 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- BGE
 						function ()
-							local target
+							local target = get_branch_target()
 
 							if rs1_value >= rs2_value then
-								target = get_branch_target()
 								reg:set_pc(reg:get_pc() + target)
+							else
+								reg:update_pc(size)
 							end
 
 							if disasm then
@@ -816,20 +818,22 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- BLTU
 						function ()
-							local target
+							local target = get_branch_target()
 
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
 							---@cast rs1_value -?
 							---@cast rs2_value -?
 							if Integer:unsigned_comparer(rs1_value, rs2_value) then
 								if rs1_value < rs2_value then
-									target = get_branch_target()
 									reg:set_pc(reg:get_pc() + target)
+								else
+									reg:update_pc(size)
 								end
 							else
 								if rs1_value > rs2_value then
-									target = get_branch_target()
 									reg:set_pc(reg:get_pc() + target)
+								else
+									reg:update_pc(size)
 								end
 							end
 
@@ -839,20 +843,21 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- BGEU
 						function ()
-							local target
+							local target = get_branch_target()
 
 							if rs1_value == rs2_value then
-								target = get_branch_target()
 								reg:set_pc(reg:get_pc() + target)
 							elseif Integer:unsigned_comparer(rs1_value, rs2_value) then
 								if rs1_value >= rs2_value then
-									target = get_branch_target()
 									reg:set_pc(reg:get_pc() + target)
+								else
+									reg:update_pc(size)
 								end
 							else
 								if rs1_value < rs2_value then
-									target = get_branch_target()
 									reg:set_pc(reg:get_pc() + target)
+								else
+									reg:update_pc(size)
 								end
 							end
 
@@ -1241,8 +1246,12 @@ function Instruction:decode_32bit (disasm)
 		end
 	}
 
+	local retval = decTab4_2[decVal4_2()]()
+	if retval == nil then
+		return RV.ILLEGAL_INSTRUCTION
+	end
 
-	return decTab4_2[decVal4_2()]()
+	return retval
 end
 
 ---
@@ -1271,7 +1280,7 @@ function Instruction:step (disasm)
 		end,
 	}
 
-	return optab[bit.rshift(self.size, 1) + 1]()
+	return optab[bit.rshift(self.size, 1)]()
 end
 
 return Instruction

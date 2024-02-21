@@ -1,7 +1,4 @@
-local tpt = require("tpt")
-local elements = require("elements")
-local elem = require("elem")
-local RV = require("config")
+local RV = require("tptriscv.constants.config")
 
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CPU")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
@@ -47,7 +44,7 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 
 	if cpu.stat:get_status("online") then
 		for _ = 1, frequency do
-			cpu:decode()
+			cpu:run(true)
 			if not cpu.stat:get_status("online") then break end
 		end
 	end

@@ -1,7 +1,6 @@
-local tpt = require("tpt")
-local Reg = require("Reg")
-local RefRelated = require("RefRelated")
-local Instruction = require("Instruction")
+local RefRelated = require("tptriscv.classes.RefRelated")
+local Instruction = require("tptriscv.classes.Instruction")
+local Reg = require("tptriscv.classes.Reg")
 
 ---@class Cpu
 local Cpu = {
@@ -27,6 +26,7 @@ function Cpu:new (o)
 
 	o.regs = Reg:new()
 	o.refs = RefRelated:new()
+
 	return o
 end
 
@@ -55,7 +55,7 @@ function Cpu:print_debug_info ()
 end
 
 function Cpu:run (disasm)
-	local instruction = Instruction:new{code = self}
+	local instruction = Instruction:new{core = self}
 
 	if instruction == nil then
 		return false

@@ -1,7 +1,5 @@
-local tpt = require("tpt")
-local elements = require("elements")
-local RV = require("src/constants/config")
-local Instance = require("src/classes/Instance")
+local RV = require("tptriscv.constants.config")
+local Instance = require("tptriscv.classes.Instance")
 
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CFG")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
@@ -262,6 +260,7 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 		function ()
 			local cpu_number = getter('tmp3')
 			local cpu = Rv.instance[id].cpu[cpu_number+1]
+			local reg = cpu.regs
 
 			if cpu == nil then
 				tpt.message_box("Error", "Invalid instance ID.")
@@ -273,11 +272,11 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 			local msg = ""
 
 			for i = 0, 31 do
-				local value = cpu:access_gp(i)
+				local value = reg:get_gp(i)
 				if value == nil then value = "nil" end
 				msg = string.format("%sR%d:\t0x%X\n", msg, i, value)
 			end
-			msg = string.format("%sPC:\t0x%X", msg, cpu:access_pc())
+			msg = string.format("%sPC:\t0x%X", msg, reg:get_pc())
 
 			tpt.message_box("RISC-V Register Dump", msg)
 

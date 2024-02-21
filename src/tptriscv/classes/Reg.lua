@@ -1,10 +1,8 @@
-local bit = require("bit")
-
 ---@class Reg
----@field private gp u32[]
----@field private pc u32
+---@field private gp Integer[]
+---@field private pc Integer
 ---@field private fp f64[]
----@field private fcsr u32
+---@field private fcsr Integer
 local Reg = {
 	-- general-purpose register
 	gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
@@ -34,8 +32,7 @@ function Reg:set_gp (r, v)
 		return
 	end
 
-	if r == 0 then -- write protection to zero register
-		print("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
+	if r == 0 then
 		return
 	end
 
@@ -83,7 +80,7 @@ function Reg:getname (reg_number)
 		"S8", "S9", "S10", "S11", "T3", "T4", "T5", "T6",
 	}
 
-	return regtab[reg_number]
+	return regtab[reg_number+1]
 end
 
 return Reg

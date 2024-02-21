@@ -1,6 +1,5 @@
-local bit = require("bit")
-local RV = require("config")
-local Integer = require("Integer")
+local RV = require("tptriscv.constants.config")
+local Integer = require("tptriscv.classes.Integer")
 
 ---@class Mem
 local Mem = {
@@ -52,11 +51,9 @@ function Mem:get_ea (ptr) return self:get_effective_address(ptr) end
 
 
 
-
-
 ---@param ptr Pointer Pure address value, not table index for Lua.
 ---@return u8
-function Mem:read_u8  (ptr)
+function Mem:read_u8 (ptr)
 	---@type Index
 	local i = bit.band(ptr, 3)
 	---@type Integer
@@ -70,7 +67,7 @@ end
 ---@param ptr Pointer Pure address value, not table index for Lua.
 ---@param val u8 If you want to store a value in memory, pass this value.
 ---@return nil
-function Mem:write_u8  (ptr, val)
+function Mem:write_u8 (ptr, val)
 	---@type Index
 	local i = bit.band(ptr, 3)
 	---@type Integer
@@ -143,7 +140,7 @@ function Mem:read_i8 (ptr)
 	---@type Address
 	local ea = Mem:get_effective_address(ptr)
 
-	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, i * 8)), (3 - i) * 8), i * 8)
+	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, i * 8)), (3 - i) * 8), 24)
 end
 
 ---@param ptr Pointer Pure address value, not table index for Lua.
@@ -157,7 +154,7 @@ function Mem:write_i8 (ptr, val)
 	---@type Address
 	local ea = Mem:get_effective_address(ptr)
 
-	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))), bit.lshift(bit.band(val, 0xFF), i * 8))
+	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))), bit.lshift(bit.band(val, mask), i * 8))
 end
 
 
@@ -172,7 +169,7 @@ function Mem:read_i16 (ptr)
 	---@type Address
 	local ea = self:get_effective_address(ptr)
 
-	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, i * 16))), i * 16)
+	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, (1 - i) * 16))), (1 - i) * 16)
 end
 
 ---@param ptr Pointer Pure address value, not table index for Lua.
@@ -186,7 +183,7 @@ function Mem:write_i16 (ptr, val)
 	---@type Address
 	local ea = self:get_effective_address(ptr)
 
-	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 16))), bit.lshift(bit.band(val, 0xFFFF), i * 16))
+	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 16))), bit.lshift(bit.band(val, mask), i * 16))
 end
 
 
@@ -239,11 +236,11 @@ end
 function Mem:unsafe_write (ptr, val, mod)
 	local wrOpTab = {
 		-- SB (i8/u8)
-		function () return self:write_i8(ptr, val) end,
+		function () self:write_i8(ptr, val) end,
 		-- SH (i16/u16)
-		function () return self:write_i16(ptr, val) end,
+		function () self:write_i16(ptr, val) end,
 		-- SW (i32/u32)
-		function () return self:write_i32(ptr, val) end,
+		function () self:write_i32(ptr, val) end,
 		-- none
 		function () return nil end,
 		-- none
@@ -283,7 +280,7 @@ end
 ---@param cpu Cpu
 ---@param ptr Pointer
 ---@param mod number
----@return Integer|nil
+---@return Integer
 function Mem:safe_read (cpu, ptr, mod)
 	if not Mem:check_bound(ptr) then
 		cpu:halt("Mem:safe_read: Memory out of bound.")
@@ -356,10 +353,10 @@ end
 
 ---@param cpu Cpu
 ---@param ptr Pointer
----@param val Integer
 ---@param mod number
+---@param val Integer
 ---@return nil
-function Mem:safe_write (cpu, ptr, val, mod)
+function Mem:safe_write (cpu, ptr, mod, val)
 	if not Mem:check_bound(ptr) then
 		cpu:halt("Mem:safe_write: Memory out of bound.")
 	end
@@ -377,7 +374,7 @@ function Mem:safe_write (cpu, ptr, val, mod)
 
 	local wrOpTab = {
 		-- SB (i8/u8)
-		function () return self:write_i8(ptr, val) end,
+		function () self:write_i8(ptr, val) end,
 		-- SH (i16/u16)
 		function ()
 			if cpu.conf.check_aligned then
@@ -462,3 +459,5 @@ function Mem:dump_memory (base, size, filename)
 
 	f:close()
 end
+
+return Mem

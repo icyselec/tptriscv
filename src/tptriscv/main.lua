@@ -19,26 +19,16 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 ---@version LuaJIT
 
-local Instance = require("Instance")
-local Cpu = require("Cpu")
-
 -- Global namespace
 ---@class Rv
 ---@field instance Instance[]
 Rv = {
-	---@class Instance
-	instance = {
-		conf = {},
-		stat = {},
-		cpu = {},
-		mem = {},
-	}
+	instance = {}
 }
 
-
-dofile("src/elements/CFG.lua")
-dofile("src/elements/CPU.lua")
-dofile("src/elements/RAM.lua")
+local _ = require("tptriscv.elements.CFG")
+local _ = require("tptriscv.elements.CPU")
+local _ = require("tptriscv.elements.RAM")
 
 -- It prevents access to undeclared or uninitialized variables and print the name of variable.
 -- source by LBPHacker

@@ -1,5 +1,3 @@
-local bit = require("bit")
-
 -- static class
 ---@class Integer
 local Integer = {}
