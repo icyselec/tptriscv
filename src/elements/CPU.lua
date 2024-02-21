@@ -1,6 +1,9 @@
-local RVREGISTER
+local tpt = require("tpt")
+local elements = require("elements")
+local elem = require("elem")
+local RV = require("config")
 
-RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CPU")
+local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CPU")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "CPU")
 elements.property(RVREGISTER, "Description", "RISC-V 32-Bit CPU, RV32I set is being implemented.")
@@ -16,7 +19,7 @@ elements.property(RVREGISTER, "Advection", 1)
 elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
 
-elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Create", function (_, x, y, _, _)
 	tpt.set_property('ctype', 0, x, y)
 end)
 
@@ -28,27 +31,24 @@ end)
 -- tmp3  : not allocated
 -- tmp4  : not allocated
 
-elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 	local instance_id = tpt.get_property('ctype', x, y)
 
 	if instance_id <= 0 then -- When processor is not active
 		return
-	elseif rv.instance[instance_id].cpu[1] == nil then
+	elseif Rv.instance[instance_id].cpu[1] == nil then
 		tpt.set_property('ctype', -1, x, y) -- this instance id is not initialized or invalid.
 		return
 	end
 
-	-- Debug
-	-- tpt.set_property('life', instance_id, x, y)
-
-	local instance = rv.instance[instance_id]
+	local instance = Rv.instance[instance_id]
 	local cpu = instance.cpu[1]
-	local freq = cpu.conf.freq -- multiprocessiong not yet
+	local frequency = cpu.conf:get_config("frequency") -- multiprocessiong not yet
 
-	if cpu.stat.online then
-		for i = 1, freq do
+	if cpu.stat:get_status("online") then
+		for _ = 1, frequency do
 			cpu:decode()
-			if not cpu.stat.online then break end
+			if not cpu.stat:get_status("online") then break end
 		end
 	end
 
@@ -56,6 +56,4 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	local temp = tpt.get_property('temp', x, y)
 	tpt.set_property('temp', temp + ctx.conf.freq * 1.41, x, y)
 	]]
-
-	return
 end)

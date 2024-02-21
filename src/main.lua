@@ -1,5 +1,5 @@
 --[[
-Implement the RISC-V instruction set on TPT.
+Implement the RISC-V processor on TPT.
 Copyright (C) 2024  icyselec
 
 This library is free software; you can redistribute it and/or
@@ -17,13 +17,28 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ]]
 
--- RISC-V 32-Bit Emulator for 'The Powder Toy'
+---@version LuaJIT
+
+local Instance = require("Instance")
+local Cpu = require("Cpu")
+
+-- Global namespace
+---@class Rv
+---@field instance Instance[]
+Rv = {
+	---@class Instance
+	instance = {
+		conf = {},
+		stat = {},
+		cpu = {},
+		mem = {},
+	}
+}
 
 
--- created new namespace for code re-factoring
-rv = {}
--- created new namespace for constants
-RV = {}
+dofile("src/elements/CFG.lua")
+dofile("src/elements/CPU.lua")
+dofile("src/elements/RAM.lua")
 
 -- It prevents access to undeclared or uninitialized variables and print the name of variable.
 -- source by LBPHacker
@@ -41,27 +56,12 @@ do
 	setfenv(1, env)
 end
 
-rv.decode = {}
-rv.permissions = {}
 
--- definition constants
-RV.MAX_MEMORY_WORD = 65536 -- 256 kiB limit
-RV.MAX_MEMORY_SIZE = RV.MAX_MEMORY_WORD * 4
-RV.MAX_FREQ_MULTIPLIER = 1667
-RV.MAX_TEMPERATURE = 120.0
-RV.MOD_IDENTIFIER = "FREECOMPUTER"
-RV.EXTENSIONS = {"RV32I"}
 
+--[[
 -- definition of permissions
+rv.permissions = {}
 rv.permissions.clipboard_access = nil
-
-function rv.panic ()
-
-end
-
-function rv.throw (msg)
-	print(msg)
-end
 
 function rv.get_permission (perm_name)
 	if rv.permissions[perm_name] == false then
@@ -75,7 +75,7 @@ function rv.get_permission (perm_name)
 	msg = msg .. "\n" .. perm_name
 
 	while answer == "y" or answer == "Y" do
-		answer = tpt.input(msg .. failed)
+		answer = tpt.input(title, msg .. failed)
 		if failed == "" and (answer ~= "n" or answer ~= "N") then
 			failed = "\n\nPlease answer correctly."
 		elseif answer == "n" or answer == "N" then
@@ -94,20 +94,7 @@ function rv.try_permission (perm_name)
 		return false
 	else return true end
 end
-
-function rv.print_debug_info(instance)
-	local mem = instance.mem
-	if mem == nil then
-		return false
-	end
-
-	print("segmentation: " .. tostring(mem.debug.segmentation))
-	print("segment_size: " .. tostring(mem.debug.segment_size))
-	print("panic_when_fault: " .. tostring(mem.debug.panic_when_fault))
-	print("segment_map: " .. tostring(mem.debug.segment_map))
-
-	return true
-end
+]]
 
 
 
@@ -115,3 +102,4 @@ end
 
 
 -- Also try Legend of Astrum!
+

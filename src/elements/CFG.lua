@@ -1,17 +1,7 @@
 local tpt = require("tpt")
 local elements = require("elements")
-
-
-local rv = {}
-
-function rv.apis_read (...)
-
-end
-
--- YOU ARE NOT EXPECTED TO UNDERSTAND THIS
-function rv.apis_writ (...)
-
-end
+local RV = require("src/constants/config")
+local Instance = require("src/classes/Instance")
 
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CFG")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
@@ -29,7 +19,7 @@ elements.property(RVREGISTER, "Advection", 1)
 elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
 
-elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 	local current_life = tpt.get_property('life', x, y)
 
 	if current_life <= 0 then -- no operation or error
@@ -47,7 +37,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	end
 
 	local function getter (prop_name) return tpt.get_property(prop_name, x, y) end
-	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
+--	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
 
 	-- Caution! : API is unstable
 	local id = tpt.get_property('ctype', x, y)
@@ -56,20 +46,22 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (1) get the register value
 		function ()
 			local cpu_number = getter('tmp3')
-			local reg_number = getter('tmp4', x, y)
+			local reg_number = getter('tmp4')
 
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local cpu = Rv.instance[id].cpu[cpu_number]
 			if cpu == nil then
 				setErrorLevel(1)
 				return
 			end
 
+			local reg = cpu.regs
+
 			local retval
 
 			if reg_number == 0 then
-				retval = cpu:access_pc()
+				retval = reg:get_pc()
 			else
-				retval = cpu:access_gp(reg_number - 1)
+				retval = reg:get_gp(reg_number - 1)
 			end
 
 			setReturn(retval, 0)
@@ -81,16 +73,16 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			local cpu_number = getter('tmp3')
 			local reg_number = getter('tmp4')
 
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local cpu = Rv.instance[id].cpu[cpu_number]
 			if cpu == nil then
 				setErrorLevel(1)
 				return
 			end
 
-			if regNum == 0 then
-				cpu:access_pc(getter('tmp'))
+			if reg_number == 0 then
+				cpu:set_pc(getter('tmp'))
 			else
-				cpu:access_gp(reg_number, getter('tmp'))
+				cpu:set_gp(reg_number, getter('tmp'))
 			end
 
 			setReturn(0, 0)
@@ -100,20 +92,20 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (3) get the current frequency
 		function ()
 			local cpu_number = getter('tmp3') + 1
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local cpu = Rv.instance[id].cpu[cpu_number]
 			if cpu == nil then
 				setErrorLevel(1)
 				return
 			end
 
-			setReturn(cpu.conf.freq, 0)
+			setReturn(cpu.conf:get_config("frequency"), 0)
 
 			return true
 		end,
 		-- (4) set the current frequency
 		function ()
 			local cpu_number = getter('tmp3')
-			local cpu = rv.instance[id].cpu[cpu_number]
+			local cpu = Rv.instance[id].cpu[cpu_number]
 			if cpu == nil then
 				setErrorLevel(1)
 				return
@@ -125,15 +117,15 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				return
 			end
 
-			cpu.conf.freq = newFreq
+			cpu.conf:set_config("frequency", newFreq)
 			setReturn(0, 0)
 
 			return true
 		end,
 		-- (5) create instance
 		function ()
-			if rv.instance[id] ~= nil then
-				rv.throw("rv.new_instance: Instance id already in use.")
+			if Rv.instance[id] ~= nil then
+				Rv.throw("Rv.new_instance: Instance id already in use.")
 				return
 			end
 
@@ -147,14 +139,14 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				setReturn(0, 0)
 			end
 
-			rv.instance[id] = instance
+			Rv.instance[id] = instance
 
 			return true
 		end,
 		-- (6) delete instance
 		function ()
-			if rv.instance[id] == nil then
-				rv.throw("Configuration: API 6, delete failed. please restart the game.")
+			if Rv.instance[id] == nil then
+				print("Configuration: API 6, delete failed. please restart the game.")
 				return
 			end
 
@@ -164,14 +156,14 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (7) read memory
 		function ()
-			local cpu_number = getter('tmp3')
+--			local cpu_number = getter('tmp3')
 			local adr = getter('tmp4')
-			local instance = rv.instance[id]
+			local instance = Rv.instance[id]
 			local mem = instance.mem
 			local val = mem:raw_access(adr, 3)
 
 			if val == nil then
-				rv.throw("Configuration: rv.access_memory is failed to read.")
+				Rv.throw("Configuration: Rv.access_memory is failed to read.")
 				return false
 			end
 
@@ -180,10 +172,10 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (8) write memory
 		function ()
-			local cpu_number = getter('tmp3')
+--			local cpu_number = getter('tmp3')
 			local adr = getter('tmp4')
 			local val = getter('tmp')
-			local instance = rv.instance[id]
+			local instance = Rv.instance[id]
 			local mem = instance.mem
 
 			mem:raw_access(adr, 3, val)
@@ -193,9 +185,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (9) load test program
 		function ()
-			return -- deprecated, do not use!
+			-- deprecated, do not use!
 			--[[
-			rv.load_test_code(id)
+			Rv.load_test_code(id)
 
 			setReturn(0, 0)
 			return true
@@ -204,9 +196,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (10) get debug info
 		function ()
 			local cpu_number = getter('tmp3')
-			local instance = rv.instance[id]
+			local instance = Rv.instance[id]
 			local cpu = instance.cpu[cpu_number]
-			if not rv.print_debug_info(cpu) then
+			if not Rv.print_debug_info(cpu) then
 				setErrorLevel(1)
 			end
 
@@ -214,14 +206,14 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (11) toggle debugging segmentation
 		function ()
-			local cpu_number = getter('tmp3')
-			rv.instance[id].mem.debug.segmentation = bit.bxor(rv.instance[id].mem.debug.segmentation, 1)
+--			local cpu_number = getter('tmp3')
+			Rv.instance[id].mem.debug.segmentation = bit.bxor(Rv.instance[id].mem.debug.segmentation, 1)
 			setReturn(0, 0)
 			return true
 		end,
 		-- (12) set or unset write protection on selected segment
 		function ()
-			local mem = rv.instance[id].mem
+			local mem = Rv.instance[id].mem
 			local pos = getter('tmp3')
 			local val = getter('tmp4')
 
@@ -238,9 +230,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (13) create memory instance
 		function ()
-			return -- deprecated
+			-- deprecated
 			--[[
-			if not rv.new_mem(id) then
+			if not Rv.new_mem(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -253,9 +245,9 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		end,
 		-- (14) delete memory instance
 		function ()
-			return -- deprecated
+			-- deprecated
 			--[[
-			if not rv.del_mem(id) then
+			if not Rv.del_mem(id) then
 				setReturn(-1, -1)
 				setErrorLevel(1)
 				return false
@@ -269,7 +261,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		-- (15) register dump
 		function ()
 			local cpu_number = getter('tmp3')
-			local cpu = rv.instance[id].cpu[cpu_number+1]
+			local cpu = Rv.instance[id].cpu[cpu_number+1]
 
 			if cpu == nil then
 				tpt.message_box("Error", "Invalid instance ID.")
@@ -299,7 +291,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			local max = getter('tmp4')
 			local msg = ""
 
-			local mem = rv.instance[id].mem
+			local mem = Rv.instance[id].mem
 
 			if beg > max then
 				tpt.message_box("Error", "Invalid range.")
@@ -333,7 +325,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		function ()
 			--[[
 			-- permission check
-			local perm = rv.try_permission("clipboard_access")
+			local perm = Rv.try_permission("clipboard_access")
 			if perm == false then
 				setReturn(-1, -1)
 				setErrorLevel(2)
@@ -343,7 +335,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 			local beg = getter('tmp3')
 
 			local str = tpt.get_clipboard()
-			rv.string_to_memory(id, beg, str)
+			Rv.string_to_memory(id, beg, str)
 
 			setReturn(0, 0)
 			setErrorLevel(0)
@@ -354,7 +346,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		function ()
 			local base = getter('tmp3')
 			local size = getter('tmp4')
-			local instance = rv.instance[id]
+			local instance = Rv.instance[id]
 			local mem = instance.mem
 
 			local filename = tpt.input("File Load", "Which file do you want to open?")
@@ -366,7 +358,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		function ()
 			local base = getter('tmp3')
 			local size = getter('tmp4')
-			local instance = rv.instance[id]
+			local instance = Rv.instance[id]
 			local mem = instance.mem
 
 			local filename = tpt.input("File Dump", "What file do you want to print?")
@@ -390,6 +382,4 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 	elseif retval == true then
 		setErrorLevel(0)
 	end
-
-	return
 end)

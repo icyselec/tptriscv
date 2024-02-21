@@ -5,7 +5,7 @@ local bit = require("bit")
 ---@field private pc u32
 ---@field private fp f64[]
 ---@field private fcsr u32
-Reg = {
+local Reg = {
 	-- general-purpose register
 	gp = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
 	-- program counter
@@ -30,12 +30,12 @@ end
 ---@return nil
 function Reg:set_gp (r, v)
 	if r < 0 or r > 31 then
-		rv.throw("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
+		print("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
 		return
 	end
 
 	if r == 0 then -- write protection to zero register
-		rv.throw("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
+		print("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
 		return
 	end
 
@@ -86,3 +86,4 @@ function Reg:getname (reg_number)
 	return regtab[reg_number]
 end
 
+return Reg

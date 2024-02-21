@@ -1,8 +1,9 @@
 local bit = require("bit")
-
+local RV = require("config")
+local Integer = require("Integer")
 
 ---@class Mem
-Mem = {
+local Mem = {
 	conf = {
 		bit_width = 32,
 		size = RV.MAX_MEMORY_SIZE
@@ -17,7 +18,7 @@ Mem = {
 	},
 }
 
----@param o table
+---@param o? table
 ---@nodiscard
 ---@return table
 function Mem:new (o)
@@ -30,6 +31,15 @@ function Mem:new (o)
 
 	return o
 end
+
+---@return nil
+function Mem:print_debug_info ()
+	print("segmentation: " .. tostring(self.debug.segmentation))
+	print("segment_size: " .. tostring(self.debug.segment_size))
+	print("panic_when_fault: " .. tostring(self.debug.panic_when_fault))
+	print("segment_map: " .. tostring(self.debug.segment_map))
+end
+
 
 ---@param ptr Pointer Pure address value.
 ---@return Address # Effective address value that can be used as a table index for Lua.

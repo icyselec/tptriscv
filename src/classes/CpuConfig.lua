@@ -1,8 +1,7 @@
-
 ---@class CpuConfig
 ---@field private frequency number
 ---@field private extension string[]
-CpuConfig = {
+local CpuConfig = {
 	---@class Ref
 	---@field ref_mem Mem
 	ref_instance = {
@@ -13,7 +12,6 @@ CpuConfig = {
 	extension = {},
 	check_aligned = false,
 }
-
 
 
 ---@param o? table
@@ -42,3 +40,5 @@ end
 function CpuConfig:set_config (conf_name, value)
 	self[conf_name] = value
 end
+
+return CpuConfig

@@ -2,7 +2,7 @@ local bit = require("bit")
 
 -- static class
 ---@class Integer
-Integer = {}
+local Integer = {}
 
 --[[ Usage:
 -- memory limit check
@@ -24,3 +24,5 @@ end
 function Integer:unsigned_comparer (x, y)
 	return bit.bxor(bit.band(x, 0x80000000), bit.band(y, 0x80000000)) == 0
 end
+
+return Integer

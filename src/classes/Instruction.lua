@@ -1,11 +1,14 @@
 --local tpt = require("tpt")
 local bit = require("bit")
+local Reg = require("Reg")
+local Integer = require("Integer")
+local RV = require("config")
 
 ---@class Instruction
 ---@field core Cpu
 ---@field size Integer
 ---@field cmds u32[]
-Instruction = {
+local Instruction = {
 	core = {},
 	size = 0,
 	cmds = {},
@@ -19,11 +22,9 @@ function Instruction:new (o)
 	setmetatable(o, self)
 	self.__index = self
 	if o.core == nil then
-		rv.throw("Instruction:constructor: Failed to initialization, cpu core reference is nil.")
+		print("Instruction:constructor: Failed to initialization, cpu core reference is nil.")
 		return nil
 	end
-
-
 
 	return o
 end
@@ -1272,3 +1273,5 @@ function Instruction:step (disasm)
 
 	return optab[bit.rshift(self.size, 1) + 1]()
 end
+
+return Instruction

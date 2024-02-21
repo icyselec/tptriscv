@@ -1,3 +1,8 @@
+local RV = require("config")
+local tpt = require("tpt")
+local elements = require("elements")
+local elem = require("elem")
+
 
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "RAM")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
@@ -15,11 +20,11 @@ elements.property(RVREGISTER, "Advection", 1)
 elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
 
-elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
+elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 	local function getter (prop_name) return tpt.get_property(prop_name, x, y) end
-	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
+--	local function setter (prop_name, val) tpt.set_property(prop_name, val, x, y) end
 
-	local instance = rv.instance[getter('ctype')]
+	local instance = Rv.instance[getter('ctype')]
 	if instance == nil then return end
 	local mem = instance.mem
 
@@ -47,7 +52,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				local found = tpt.get_property('type', x + rx, y + ry)
 
 				if found == elements.DEFAULT_PT_FILT then
-					local value = mem:raw_access(ptr, 3)
+					local value = mem:read_u32(ptr)
 					value = value + 0x10000000 -- serialization
 					tpt.set_property('ctype', value, x + rx, y + ry)
 				end
@@ -61,7 +66,7 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 				if found == elements.DEFAULT_PT_FILT then
 					local value = tpt.get_property('ctype', x + rx, y + ry)
 					value = value - 0x10000000 -- deserialization
-					mem:raw_access(ptr, 3, value)
+					mem:write_u32(ptr, value)
 				end
 			end
 		end

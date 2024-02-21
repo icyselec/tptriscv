@@ -3,7 +3,7 @@
 ---@field private is_aligned boolean
 ---@field private is_waiting boolean
 ---@field private online boolean
-CpuStatus = {
+local CpuStatus = {
 	is_halted = false,
 	is_aligned = true,
 	is_waiting = false,
@@ -32,3 +32,5 @@ end
 function CpuStatus:set_status (stat_name, value)
 	self[stat_name] = value
 end
+
+return CpuStatus

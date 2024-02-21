@@ -1,8 +1,10 @@
 local tpt = require("tpt")
-
+local Reg = require("Reg")
+local RefRelated = require("RefRelated")
+local Instruction = require("Instruction")
 
 ---@class Cpu
-Cpu = {
+local Cpu = {
 	---@class RefRelated
 	refs = {},
 	---@class CpuConfig
@@ -64,3 +66,5 @@ function Cpu:run (disasm)
 		print(disassembled)
 	end
 end
+
+return Cpu

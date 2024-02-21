@@ -1,5 +1,5 @@
 ---@class RefRelated
-RefRelated = {}
+local RefRelated = {}
 
 ---@param o? table
 ---@nodiscard
@@ -21,3 +21,5 @@ end
 function RefRelated:del (s)
 	self[s] = nil
 end
+
+return RefRelated
