@@ -14,10 +14,12 @@ local Cpu = {
 	regs = {},
 	---@class Mem
 	ref_mem = {},
+	---@class Instruction
+	instruction = {}
 }
 
 ---@nodiscard
----@return table
+---@return table?
 ---@param o? table
 function Cpu:new (o)
 	o = o or {}
@@ -26,6 +28,14 @@ function Cpu:new (o)
 
 	o.regs = Reg:new()
 	o.refs = RefRelated:new()
+
+	local instruction = Instruction:new{core = self}
+
+	if instruction == nil then
+		return
+	end
+
+	o.instruction = instruction
 
 	return o
 end
@@ -55,13 +65,8 @@ function Cpu:print_debug_info ()
 end
 
 function Cpu:run (disasm)
-	local instruction = Instruction:new{core = self}
+	local disassembled = self.instruction:step(disasm)
 
-	if instruction == nil then
-		return false
-	end
-
-	local disassembled = instruction:step(disasm)
 	if disasm then
 		print(disassembled)
 	end
