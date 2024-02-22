@@ -1,5 +1,3 @@
-local Rv = require("tptriscv.define.Shared")
-local RV = require("tptriscv.define.Config")
 local Reg = require("tptriscv.classes.Reg")
 local Integer = require("tptriscv.classes.Integer")
 

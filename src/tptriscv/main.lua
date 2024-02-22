@@ -20,13 +20,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ---@version LuaJIT
 
 -- Global namespace for shared functions
-local Rv = require("tptriscv.define.Shared")
-local RV = require("tptriscv.define.Config")
+Rv = require("tptriscv.define.Shared")
+RV = require("tptriscv.define.Config")
 -- Global namespace for configuration
 
 local _ = require("tptriscv.elements.CFG")
 local _ = require("tptriscv.elements.CPU")
 local _ = require("tptriscv.elements.RAM")
+local _ = require("tptriscv.elements.DBG")
 
 -- It prevents access to undeclared or uninitialized variables and print the name of variable.
 -- source by LBPHacker

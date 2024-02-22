@@ -1,5 +1,3 @@
-local Rv = require("tptriscv.define.Shared")
-local RV = require("tptriscv.define.Config")
 local Cpu = require("tptriscv.classes.Cpu")
 local Mem = require("tptriscv.classes.Mem")
 local CpuConfig = require("tptriscv.classes.CpuConfig")

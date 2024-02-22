@@ -1,5 +1,3 @@
-local Rv = require("tptriscv.define.Shared")
-local RV = require("tptriscv.define.Config")
 local RefRelated = require("tptriscv.classes.RefRelated")
 local Instruction = require("tptriscv.classes.Instruction")
 local Reg = require("tptriscv.classes.Reg")
@@ -31,7 +29,7 @@ function Cpu:new (o)
 	o.regs = Reg:new()
 	o.refs = RefRelated:new()
 
-	local instruction = Instruction:new{core = self}
+	local instruction = Instruction:new{core = o}
 
 	if instruction == nil then
 		return

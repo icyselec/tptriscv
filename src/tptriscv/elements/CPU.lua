@@ -1,6 +1,3 @@
-local Rv = require("tptriscv.define.Shared")
-local RV = require("tptriscv.define.Config")
-
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "CPU")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "CPU")
@@ -16,7 +13,7 @@ elements.property(RVREGISTER, "AirDrag", 0)
 elements.property(RVREGISTER, "Advection", 1)
 elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
-elements.property(RVREGISTER, "Properties", elem.TYPE_SOLID + elem.PROP_NOCTYPEDRAW + PROP_NOAMBHEAT + PROP_HOT_GLOW)
+elements.property(RVREGISTER, "Properties", elem.TYPE_SOLID + elem.PROP_NOCTYPEDRAW + elem.PROP_NOAMBHEAT + elem.PROP_HOT_GLOW)
 
 elements.property(RVREGISTER, "Create", function (_, x, y, _, _)
 	tpt.set_property('ctype', 0, x, y)

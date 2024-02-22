@@ -1,5 +1,3 @@
-local RV = require("tptriscv.define.Config")
-
 local RVREGISTER = elements.allocate(RV.MOD_IDENTIFIER, "RAM")
 elements.element(RVREGISTER, elements.element(elements.DEFAULT_PT_ARAY))
 elements.property(RVREGISTER, "Name", "RAM")
@@ -15,7 +13,7 @@ elements.property(RVREGISTER, "AirDrag", 0)
 elements.property(RVREGISTER, "Advection", 1)
 elements.property(RVREGISTER, "Weight", 0)
 elements.property(RVREGISTER, "Diffusion", 0)
-elements.property(RVREGISTER, "Properties", elem.TYPE_SOLID + elem.PROP_NOCTYPEDRAW + PROP_NOAMBHEAT + PROP_HOT_GLOW)
+elements.property(RVREGISTER, "Properties", elem.TYPE_SOLID + elem.PROP_NOCTYPEDRAW + elem.PROP_NOAMBHEAT + elem.PROP_HOT_GLOW)
 
 elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 	local function getter (prop_name) return tpt.get_property(prop_name, x, y) end
