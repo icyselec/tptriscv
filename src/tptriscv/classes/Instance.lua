@@ -1,3 +1,5 @@
+local Rv = require("tptriscv.define.Shared")
+local RV = require("tptriscv.define.Config")
 local Cpu = require("tptriscv.classes.Cpu")
 local Mem = require("tptriscv.classes.Mem")
 local CpuConfig = require("tptriscv.classes.CpuConfig")
@@ -34,8 +36,8 @@ function Instance:new (o)
 	return o
 end
 
-function Instance:del (o)
-	Rv.instance[o.id] = nil
+function Instance:del ()
+	Rv.instance[self.id] = nil
 	self = nil
 end
 

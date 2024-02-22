@@ -19,12 +19,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 ---@version LuaJIT
 
--- Global namespace
----@class Rv
----@field instance Instance[]
-Rv = {
-	instance = {}
-}
+-- Global namespace for shared functions
+local Rv = require("tptriscv.define.Shared")
+local RV = require("tptriscv.define.Config")
+-- Global namespace for configuration
 
 local _ = require("tptriscv.elements.CFG")
 local _ = require("tptriscv.elements.CPU")

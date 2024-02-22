@@ -1,3 +1,6 @@
+local Rv = require("tptriscv.define.Shared")
+local RV = require("tptriscv.define.Config")
+
 ---@class Reg
 ---@field private gp Integer[]
 ---@field private pc Integer

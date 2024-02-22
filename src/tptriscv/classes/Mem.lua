@@ -1,4 +1,5 @@
-local RV = require("tptriscv.constants.config")
+local Rv = require("tptriscv.define.Shared")
+local RV = require("tptriscv.define.Config")
 local Integer = require("tptriscv.classes.Integer")
 
 ---@class Mem

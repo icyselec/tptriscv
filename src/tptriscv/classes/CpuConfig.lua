@@ -2,7 +2,7 @@
 ---@field private frequency number
 ---@field private extension string[]
 local CpuConfig = {
-	---@class Ref
+	---@class RefRelated
 	---@field ref_mem Mem
 	ref_instance = {
 		ref_mem = {}
@@ -11,6 +11,7 @@ local CpuConfig = {
 	frequency = 0,
 	extension = {},
 	check_aligned = false,
+	disasm = false,
 }
 
 

@@ -1,3 +1,5 @@
+local Rv = require("tptriscv.define.Shared")
+local RV = require("tptriscv.define.Config")
 local RefRelated = require("tptriscv.classes.RefRelated")
 local Instruction = require("tptriscv.classes.Instruction")
 local Reg = require("tptriscv.classes.Reg")
