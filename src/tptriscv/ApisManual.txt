@@ -1,0 +1,21 @@
+
+
+1	new_instance
+2	del_instance
+3	load_memory tmp3=base tmp4=size
+4	dump_memory tmp3=base tmp4=size
+5	get_register_value
+6	set_register_value
+7	print_register_dump
+8	print_memory_dump
+9	nil -- print_assembly_dump
+10	nil
+11	get_env_var
+12	set_env_var
+13	get_config tmp3=cpu_number
+14	set_config tmp3=cpu_number
+15	get_status tmp3=cpu_number
+16	set_status tmp3=cpu_number
+17	get_debug_value
+18	set_debug_value
+19
