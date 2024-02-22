@@ -955,6 +955,7 @@ function Instruction:decode_32bit (disasm)
 			local decTab6_5 = {
 				-- ========== 00
 				function ()
+					local rs1_value = reg:get_gp(rs1)
 					local imm = bit.arshift(bit.band(cmd, 0xFFF00000), 20)
 
 					local decTabFnt3 = {
@@ -995,14 +996,16 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- SLTIU
 						function ()
-							local rs1_value = reg:get_gp(rs1)
-
-							if Integer:unsigned_comparer(rs1_value, imm) then
+							if Integer:exclusive_or(rs1_value, imm) then
 								if rs1_value < imm then
+									reg:set_gp(rd, 0)
+								else
 									reg:set_gp(rd, 1)
 								end
 							else
-								if not (rs1_value > imm) then
+								if rs1_value < imm then
+									reg:set_gp(rd, 1)
+								else
 									reg:set_gp(rd, 0)
 								end
 							end
@@ -1068,6 +1071,8 @@ function Instruction:decode_32bit (disasm)
 				-- ========== 01
 				function ()
 					local rs2 = bit.rshift(bit.band(cmd, 0x01F00000), 20)
+					local rs1_value = reg:get_gp(rs1)
+					local rs2_value = reg:get_gp(rs2)
 					local fnt7 = bit.rshift(bit.band(cmd, 0xFE0000000), 29)
 
 					local decTabFnt3 = {
@@ -1076,10 +1081,10 @@ function Instruction:decode_32bit (disasm)
 							local opname
 
 							if fnt7 == 0 then
-								reg:set_gp(rd, reg:get_gp(rs1) + reg:get_gp(rs2))
+								reg:set_gp(rd, rs1_value + rs2_value)
 								opname = "ADD"
 							elseif fnt7 ~= 0 then
-								reg:set_gp(rd, reg:get_gp(rs1) - reg:get_gp(rs2))
+								reg:set_gp(rd, rs1_value - rs2_value)
 								opname = "SUB"
 							end
 
@@ -1089,7 +1094,7 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- SLL
 						function ()
-							reg:set_gp(rd, bit.lshift(reg:get_gp(rs1), reg:get_gp(rs2)))
+							reg:set_gp(rd, bit.lshift(rs1_value, rs2_value))
 
 							if disasm then
 								return string.format("%s %s, %s, %s", "SLL", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
@@ -1097,7 +1102,7 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- SLT
 						function ()
-							if reg:get_gp(rs1) < reg:get_gp(rs2) then
+							if rs1_value < rs2_value then
 								reg:set_gp(rd, 1)
 							else
 								reg:set_gp(rd, 0)
@@ -1109,15 +1114,16 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- SLTU
 						function ()
-							local rs1_value = reg:get_gp(rs1)
-							local rs2_value = reg:get_gp(rs2)
-
-							if Integer:unsigned_comparer(rs1_value, rs2_value) then
+							if Integer:exclusive_or(rs1_value, rs2_value) then
 								if rs1_value < rs2_value then
+									reg:set_gp(rd, 0)
+								else
 									reg:set_gp(rd, 1)
 								end
 							else
-								if not (rs1_value > rs2_value) then
+								if rs1_value < rs2_value then
+									reg:set_gp(rd, 1)
+								else
 									reg:set_gp(rd, 0)
 								end
 							end
@@ -1128,7 +1134,7 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- XOR
 						function ()
-							reg:set_gp(rd, bit.bxor(reg:get_gp(rs1), reg:get_gp(rs2)))
+							reg:set_gp(rd, bit.bxor(rs1_value, rs2_value))
 
 							if disasm then
 								return string.format("%s %s, %s, %s", "XOR", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
@@ -1142,12 +1148,14 @@ function Instruction:decode_32bit (disasm)
 							if fnt7 == 0 then
 								op = bit.rshift
 								opname = "SRL"
-							elseif fnt7 ~= 0 then
+							elseif fnt7 == 0x20 then
 								op = bit.arshift
 								opname = "SRA"
+							else
+								return RV.ILLEGAL_INSTRUCTION
 							end
 
-							reg:set_gp(rd, op(reg:get_gp(rs1), reg:get_gp(rs2)))
+							reg:set_gp(rd, op(rs1_value, rs2_value))
 
 							if disasm then
 								return string.format("%s %s, %s, %s", opname, Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
@@ -1155,7 +1163,7 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- OR
 						function ()
-							reg:set_gp(rd, bit.bor(reg:get_gp(rs1), reg:get_gp(rs2)))
+							reg:set_gp(rd, bit.bor(rs1_value, rs2_value))
 
 							if disasm then
 								return string.format("%s %s, %s, %s", "OR", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
@@ -1163,7 +1171,7 @@ function Instruction:decode_32bit (disasm)
 						end,
 						-- AND
 						function ()
-							reg:set_gp(rd, bit.band(reg:get_gp(rs1), reg:get_gp(rs2)))
+							reg:set_gp(rd, bit.band(rs1_value, rs2_value))
 
 							if disasm then
 								return string.format("%s %s, %s, %s", "AND", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
@@ -1243,14 +1251,14 @@ function Instruction:decode_32bit (disasm)
 	}
 
 	local retval = decTab4_2[decVal4_2()]()
+
 	if retval == nil then
-		return RV.ILLEGAL_INSTRUCTION
+		return ""
 	end
 
 	return retval
 end
 
----
 ---@param disasm boolean
 function Instruction:step (disasm)
 	if not self:fetch_instruction() then
