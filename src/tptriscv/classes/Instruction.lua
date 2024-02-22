@@ -787,6 +787,10 @@ function Instruction:decode_32bit (disasm)
 								return string.format("%s %s, %s, %d", "BNE", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
+						-- none
+						function () return nil end,
+						-- none
+						function () return nil end,
 						-- BLT
 						function ()
 							local target = get_branch_target()
@@ -820,16 +824,14 @@ function Instruction:decode_32bit (disasm)
 							local target = get_branch_target()
 
 							-- If both numbers are positive, just compare them. If not, reverse the comparison condition.
-							---@cast rs1_value -?
-							---@cast rs2_value -?
-							if Integer:unsigned_comparer(rs1_value, rs2_value) then
+							if Integer:exclusive_or(rs1_value, rs2_value) then
 								if rs1_value < rs2_value then
-									reg:set_pc(reg:get_pc() + target)
-								else
 									reg:update_pc(size)
+								else
+									reg:set_pc(reg:get_pc() + target)
 								end
 							else
-								if rs1_value > rs2_value then
+								if rs1_value < rs2_value then
 									reg:set_pc(reg:get_pc() + target)
 								else
 									reg:update_pc(size)
@@ -844,16 +846,14 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							local target = get_branch_target()
 
-							if rs1_value == rs2_value then
-								reg:set_pc(reg:get_pc() + target)
-							elseif Integer:unsigned_comparer(rs1_value, rs2_value) then
+							if Integer:exclusive_or(rs1_value, rs2_value) then
 								if rs1_value >= rs2_value then
-									reg:set_pc(reg:get_pc() + target)
-								else
 									reg:update_pc(size)
+								else
+									reg:set_pc(reg:get_pc() + target)
 								end
 							else
-								if rs1_value < rs2_value then
+								if rs1_value >= rs2_value then
 									reg:set_pc(reg:get_pc() + target)
 								else
 									reg:update_pc(size)
@@ -864,10 +864,6 @@ function Instruction:decode_32bit (disasm)
 								return string.format("%s %s, %s, %d", "BGEU", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
-						-- none
-						function () return nil end,
-						-- none
-						function () return nil end,
 					}
 
 					return decTabFnt3[decValFnt3()]()
@@ -973,11 +969,12 @@ function Instruction:decode_32bit (disasm)
 						-- SLLI
 						function ()
 							local shamt = bit.band(imm, 0x1F)
+
 							if bit.rshift(bit.band(imm, 0xFE0), 5) == 0 then
 								reg:set_gp(rd, bit.lshift(reg:get_gp(rs1), shamt))
 
 								if disasm then
-									return string.format("%s %s, %s, %d", Reg:getname(rd), Reg:getname(rs1), shamt)
+									return string.format("%s %s, %s, %d", "SLLI", Reg:getname(rd), Reg:getname(rs1), shamt)
 								end
 							else
 								cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")

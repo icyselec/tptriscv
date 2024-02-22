@@ -263,16 +263,18 @@ function Mem:check_bound (ptr)
 
 	-- memory limit check
 	if Integer:unsigned_comparer(ea, RV.MAX_MEMORY_WORD) then
-		if ea > RV.MAX_MEMORY_WORD then
+		if ea >= RV.MAX_MEMORY_WORD then
+			return true
+		else
 			return false
 		end
 	else
-		if ea < RV.MAX_MEMORY_WORD then
+		if ea >= RV.MAX_MEMORY_WORD then
 			return false
+		else
+			return true
 		end
 	end
-
-	return true
 end
 
 
@@ -432,22 +434,32 @@ end
 
 function Mem:load_memory (base, size, filename)
 	local f = assert(io.open(filename, "rb"))
+	if f == nil then return false end
+
 	local i = 0
+	local found
 
 	for line in f:lines() do
-		self:write_i32(base + i, tonumber(line, 16))
-		if i > size then
-			break
-		end
+		found = string.find(line, "^[-][-]")
 
-		i = i + 4
+		if found == nil then
+			self:write_i32(base + i, tonumber(line, 16))
+
+			if i > size then
+				break
+			end
+
+			i = i + 4
+		end
 	end
 
 	f:close()
+	return true
 end
 
 function Mem:dump_memory (base, size, filename)
 	local f = assert(io.open(filename, "wb"))
+	if f == nil then return false end
 	local i = 0
 
 	repeat
@@ -457,6 +469,7 @@ function Mem:dump_memory (base, size, filename)
 	until i > size
 
 	f:close()
+	return true
 end
 
 return Mem

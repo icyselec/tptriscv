@@ -32,8 +32,7 @@ end
 
 
 
-function Apis:new_instance (args)
-	local i = args.i
+function Apis:new_instance (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	if Rv.instance[id] ~= nil then
@@ -52,8 +51,7 @@ function Apis:new_instance (args)
 	return set_return(i)
 end
 
-function Apis:del_instance (args)
-	local i = args.i
+function Apis:del_instance (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	if Rv.instance[id] == nil then
@@ -66,8 +64,7 @@ function Apis:del_instance (args)
 	return set_return(i)
 end
 
-function Apis:load_memory (args)
-	local i = args.i
+function Apis:load_memory (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local base = getter(i, 'FIELD_TMP3')
@@ -77,12 +74,15 @@ function Apis:load_memory (args)
 
 	local filename = tpt.input("File Load", "Which file do you want to open?")
 
-	mem:load_memory(base, size, filename)
+	if not mem:load_memory(base, size, filename) then
+		tpt.message_box("Error", "Memory load failed.")
+		return set_return(i, 1)
+	end
+
 	return set_return(i)
 end
 
-function Apis:dump_memory (args)
-	local i = args.i
+function Apis:dump_memory (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local base = getter(i, 'FIELD_TMP3')
@@ -92,12 +92,15 @@ function Apis:dump_memory (args)
 
 	local filename = tpt.input("File Dump", "What file do you want to print?")
 
-	mem:dump_memory(base, size, filename)
-	return true
+	if not mem:dump_memory(base, size, filename) then
+		tpt.message_box("Error", "Memory dump failed.")
+		return set_return(i, 1)
+	end
+
+	return set_return(i)
 end
 
-function Apis:get_register_value (args)
-	local i = args.i
+function Apis:get_register_value (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(args.i, 'FIELD_TMP3')
@@ -123,8 +126,7 @@ function Apis:get_register_value (args)
 	return 	set_return(i)
 end
 
-function Apis:set_register_value (args)
-	local i = args.i
+function Apis:set_register_value (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter('FIELD_TMP3')
@@ -144,8 +146,7 @@ function Apis:set_register_value (args)
 	return set_return(i)
 end
 
-function Apis:print_register_dump (args)
-	local i = args.i
+function Apis:print_register_dump (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3')
@@ -179,8 +180,7 @@ function Apis:print_register_dump (args)
 	return true
 end
 
-function Apis:print_memory_dump (args)
-	local i = args.i
+function Apis:print_memory_dump (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local beg = getter(i, 'FIELD_TMP3')
@@ -216,8 +216,7 @@ function Apis:print_memory_dump (args)
 	return true
 end
 
-function Apis:get_env_var (args)
-	local i = args.i
+function Apis:get_env_var (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local key = tpt.input("Get Mod Environment Variable", "Input Variable Name:")
@@ -225,8 +224,7 @@ function Apis:get_env_var (args)
 	return set_return(i, RV[key])
 end
 
-function Apis:set_env_var (args)
-	local i = args.i
+function Apis:set_env_var (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local key = tpt.input("Get Mod Environment Variable", "Input Variable Name:")
@@ -236,8 +234,7 @@ function Apis:set_env_var (args)
 	return set_return(i)
 end
 
-function Apis:get_config (args)
-	local i = args.i
+function Apis:get_config (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3') + 1
@@ -252,8 +249,7 @@ function Apis:get_config (args)
 	return set_return(i, cpu.conf:get_config(key))
 end
 
-function Apis:set_config (args)
-	local i = args.i
+function Apis:set_config (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3') + 1
@@ -269,8 +265,7 @@ function Apis:set_config (args)
 	return set_return(i, cpu.conf:set_config(key, val))
 end
 
-function Apis:get_status (args)
-	local i = args.i
+function Apis:get_status (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3') + 1
@@ -285,8 +280,7 @@ function Apis:get_status (args)
 	return set_return(i, cpu.stat:get_status(key))
 end
 
-function Apis:set_status (args)
-	local i = args.i
+function Apis:set_status (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3') + 1
@@ -301,161 +295,5 @@ function Apis:set_status (args)
 
 	return set_return(i, cpu.conf:set_status(key, val))
 end
-
-	local cfgOpTab = {
-		-- (1) get the register value
-		function ()
-
-		end,
-		-- (2) set the register value
-		function ()
-
-		end,
-		-- (3) get the current frequency
-		function ()
-
-		end,
-		-- (4) set the current frequency
-		function ()
-			local cpu_number = getter('tmp3')
-			local cpu = Rv.instance[id].cpu[cpu_number]
-			if cpu == nil then
-				setErrorLevel(1)
-				return
-			end
-
-			local newFreq = tpt.get_property('tmp4', x, y)
-			if newFreq > RV.MAX_FREQ_MULTIPLIER then
-				setErrorLevel(1)
-				return
-			end
-
-			cpu.conf:set_config("frequency", newFreq)
-			setReturn(0, 0)
-
-			return true
-		end,
-		-- (5) create instance
-		function ()
-
-		end,
-		-- (6) delete instance
-		function ()
-
-		end,
-		-- (7) read memory
-		function ()
---			local cpu_number = getter('tmp3')
-			local adr = getter('tmp4')
-			local instance = Rv.instance[id]
-			local mem = instance.mem
-			local val = mem:raw_access(adr, 3)
-
-			if val == nil then
-				Rv.throw("Configuration: Rv.access_memory is failed to read.")
-				return false
-			end
-
-			setReturn(val, 0)
-			return true
-		end,
-		-- (8) write memory
-		function ()
---			local cpu_number = getter('tmp3')
-			local adr = getter('tmp4')
-			local val = getter('tmp')
-			local instance = Rv.instance[id]
-			local mem = instance.mem
-
-			mem:raw_access(adr, 3, val)
-
-			setReturn(0, 0)
-			return true
-		end,
-		-- (9) load test program
-		function ()
-			-- deprecated, do not use!
-			--[[
-			Rv.load_test_code(id)
-
-			setReturn(0, 0)
-			return true
-			]]
-		end,
-		-- (10) get debug info
-		function ()
-			local cpu_number = getter('tmp3')
-			local instance = Rv.instance[id]
-			local cpu = instance.cpu[cpu_number]
-			if not Rv.print_debug_info(cpu) then
-				setErrorLevel(1)
-			end
-
-			setReturn(0, 0)
-		end,
-		-- (11) toggle debugging segmentation
-		function ()
---			local cpu_number = getter('tmp3')
-			Rv.instance[id].mem.debug.segmentation = bit.bxor(Rv.instance[id].mem.debug.segmentation, 1)
-			setReturn(0, 0)
-			return true
-		end,
-		-- (12) set or unset write protection on selected segment
-		function ()
-			local mem = Rv.instance[id].mem
-			local pos = getter('tmp3')
-			local val = getter('tmp4')
-
-			if val == 0 then
-				val = false
-			else
-				val = true
-			end
-
-			mem.debug.segment_map[pos] = val
-
-			setReturn(0, 0)
-			return true
-		end,
-		-- (15) register dump
-		function ()
-
-		end,
-		-- (16) memory dump
-		-- tmp3: start of memory
-		-- tmp4: end of memory
-		function ()
-
-		end,
-		-- (17) clipboard to RAM -- deprecated, do not use!
-		function ()
-			--[[
-			-- permission check
-			local perm = Rv.try_permission("clipboard_access")
-			if perm == false then
-				setReturn(-1, -1)
-				setErrorLevel(2)
-				return false
-			end
-
-			local beg = getter('tmp3')
-
-			local str = tpt.get_clipboard()
-			Rv.string_to_memory(id, beg, str)
-
-			setReturn(0, 0)
-			setErrorLevel(0)
-			]]
-			return false
-		end,
-		-- (18) read file and load memory
-		function ()
-
-		end,
-		-- (19) write file and dump memory
-		function ()
-
-		end,
-	}
 
 return Apis

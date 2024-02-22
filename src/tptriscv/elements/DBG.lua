@@ -26,13 +26,17 @@ local cpu
 
 elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
 	if not enabled then
-		enabled = true
-
 		Rv.instance[1] = Instance:new{id = 1}
 		Rv.instance[1].cpu[1].conf:set_config("disasm", true)
 		cpu = Rv.instance[1].cpu[1]
 
-		cpu.refs.mem:load_memory(0, 255, tpt.input("File Load", "Which file do you want to open?"))
+		if not cpu.refs.mem:load_memory(0, 255, tpt.input("File Load", "Which file do you want to open?")) then
+			Rv.instance[1]:del()
+			tpt.message_box("Error", "Please check the file name or permission.")
+			return
+		end
+
+		enabled = true
 	end
 end)
 
@@ -46,7 +50,31 @@ elements.property(RVREGISTER, "Update", function(...)
 	end
 
 	if Rv.instance[1].cpu[1].regs:get_pc() == before_pc then
-		Rv.instance[1].mem:dump_memory(0, 255, tpt.input("File Dump", "What file do you want to print?"))
+		if not Rv.instance[1].mem:dump_memory(0, 255, tpt.input("File Dump", "What file do you want to print?")) then
+			tpt.message_box("Error", "Please check the file name or permission.")
+			return
+		end
+
+		local answer = tpt.input("Waiting for Input", "Would you like to see the register dump?\n(Please answer with y or Y, and any other inputs will be treated as deny.)", "y")
+
+		if answer == "y" or answer == "Y" then
+			local reg = Rv.instance[1].cpu[1].regs
+			local msg = ""
+
+			for i = 0, 31 do
+				local value = reg:get_gp(i)
+
+				if value == nil then
+					value = "nil"
+				end
+
+				msg = string.format("%sR%d:\t0x%X\n", msg, i, value)
+			end
+			msg = string.format("%sPC:\t0x%X", msg, reg:get_pc())
+
+			tpt.message_box("RISC-V Register Dump", msg)
+		end
+
 		enabled = false
 		before_pc = -1
 		Rv.instance[1]:del()

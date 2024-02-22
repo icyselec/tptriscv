@@ -1,3 +1,61 @@
+-- source code from https://marz.utk.edu/my-courses/cosc230/book/example-risc-v-assembly-programs/#strlen https://marz.utk.edu/my-courses/cosc230/book/example-risc-v-assembly-programs/#strrev
+--
+-- .section .text
+-- .global strrev
+-- .global strlen
+--
+-- start:
+--     li s1, 136
+--     li sp, 4096
+--     call strrev
+-- loop:
+--     j loop
+--
+-- strlen:
+--     # a0 = const char *str
+--     li     t0, 0         # i = 0
+-- 1: # Start of for loop
+--     add    t1, t0, a0    # Add the byte offset for str[i]
+--     lb     t1, 0(t1)     # Dereference str[i]
+--     beqz   t1, 1f        # if str[i] == 0, break for loop
+--     addi   t0, t0, 1     # Add 1 to our iterator
+--     j      1b            # Jump back to condition (1 backwards)
+-- 1: # End of for loop
+--     mv     a0, t0        # Move t0 into a0 to return
+--     ret                  # Return back via the return address register
+--
+-- strrev:
+--     # s1 = str
+--     # a0 = sz
+--     # t0 = sz / 2
+--     # t1 = i
+--     # Enter stack frame
+--     addi    sp, sp, -8
+--     sw      ra, 0(sp)
+--     sw      s1, 4(sp)
+--     # Get the size of the string
+--     mv      a0, s1
+--     call    strlen
+--     srai    t0, a0, 1     # Divide sz by 2
+--     li      t1, 0         # i = 0
+-- 1:  # for loop
+--     bge     t1, t0, 1f
+--     add     t2, a0, t1    # str + i
+--     sub     t3, a0, t1    # sz - i
+--     addi    t3, t3, -1    # sz - i - 1
+--     add     t3, t3, a0    # str + sz - i - 1
+--     lbu      t4, 0(t2)     # str[i]
+--     lbu      t5, 0(t3)     # str[sz - i - 1]
+--     sb      t4, 0(t3)     # swap
+--     sb      t5, 0(t2)
+--     addi    t1, t1, 1
+--     j       1b
+-- 1:
+--     # Leave stack frame
+--     lw      s1, 4(sp)
+--     lw      ra, 0(sp)
+--     addi    sp, sp, 8
+--     ret
 08800493
 00001137
 028000ef

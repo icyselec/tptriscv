@@ -16,11 +16,20 @@ else
 	end
 end
 ]]
+
 ---@param x Integer
 ---@param y Integer
 ---@return boolean # Returns the true value if both are positive or negative; returns the false value if only one is negative.
+function Integer:exclusive_or (x, y)
+	return (x < 0 or y < 0) and not (x < 0 and y < 0)
+end
+
+
+---@param x
+---@param y
+---@return boolean
 function Integer:unsigned_comparer (x, y)
-	return bit.bxor(bit.band(x, 0x80000000), bit.band(y, 0x80000000)) == 0
+	return Integer:exclusive_or(x, y)
 end
 
 return Integer
