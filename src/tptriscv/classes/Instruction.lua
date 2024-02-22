@@ -750,7 +750,7 @@ function Instruction:decode_32bit (disasm)
 					end
 				end,
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- BEQ/BNE/BLT/BGE/BLTU/BGEU
@@ -876,15 +876,15 @@ function Instruction:decode_32bit (disasm)
 		function ()
 			local decTab6_5 = {
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- JALR
@@ -903,7 +903,11 @@ function Instruction:decode_32bit (disasm)
 					reg:set_gp(rd, backup)
 
 					if disasm then
-						return string.format("%s %s, %d(%s)", "JALR", Reg:getname(rd), imm, Reg:getname(rs1))
+						if rd == 0 and rs1 == 1 then
+							return "RET"
+						else
+							return string.format("%s %s, %d(%s)", "JALR", Reg:getname(rd), imm, Reg:getname(rs1))
+						end
 					end
 				end,
 			}
@@ -912,7 +916,7 @@ function Instruction:decode_32bit (disasm)
 		end,
 		-- ========== 010
 		function ()
-			cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 			return RV.ILLEGAL_INSTRUCTION
 		end,
 		-- ========== 011
@@ -978,7 +982,7 @@ function Instruction:decode_32bit (disasm)
 									return string.format("%s %s, %s, %d", "SLLI", Reg:getname(rd), Reg:getname(rs1), shamt)
 								end
 							else
-								cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+								cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 								return RV.ILLEGAL_INSTRUCTION
 							end
 						end,
@@ -1036,7 +1040,7 @@ function Instruction:decode_32bit (disasm)
 								op = bit.arshift
 								opname = "SRAI"
 							else
-								cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+								cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 								return RV.ILLEGAL_INSTRUCTION
 							end
 
@@ -1191,12 +1195,12 @@ function Instruction:decode_32bit (disasm)
 				end,
 				-- ========== 10
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- ========== 11
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end
 			}
@@ -1225,11 +1229,11 @@ function Instruction:decode_32bit (disasm)
 					end
 				end,
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				function ()
-					cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 			}
@@ -1240,12 +1244,12 @@ function Instruction:decode_32bit (disasm)
 		end,
 		-- ========== 110
 		function ()
-			cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 			return RV.ILLEGAL_INSTRUCTION
 		end,
 		-- ========== 111 Not Supported other instruction length
 		function ()
-			cpu:halt("Cpu:decode_rv32i: Illegal instruction, processor is stopped.")
+			cpu:halt("Instruction:decode_32bit: Illegal instruction, processor is stopped.")
 			return RV.ILLEGAL_INSTRUCTION
 		end
 	}
