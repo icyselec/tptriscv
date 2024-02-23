@@ -1,0 +1,86 @@
+-- source code from https://marz.utk.edu/my-courses/cosc230/book/example-risc-v-assembly-programs/#bubble_sort
+--
+-- .global bubsort
+-- .global val2zero
+--
+-- prepare:
+--     li a0, 128
+--     li a1, 32
+--     li t1, 16
+--     call val2zero
+--     call bubsort
+-- loop:
+--     j loop
+--
+-- val2zero:
+--     # a0 = int *ptr
+--     # a1 = int len
+--     # t0 = int i
+--     # t1 = int v
+--     li t0, 0
+-- 1:
+--     bge t0, a1, 2f
+--     slli t3, t0, 2
+--     add t3, a0, t3
+--     sw t1, 0(t3)
+--     addi t0, t0, 1
+--     addi t1, t1, -1
+--     j 1b
+-- 2:
+--     ret # same as jalr zero, ra, 0; maybe ra means the "return address"
+--
+-- bubsort:
+--     # a0 = int *list
+--     # a1 = size
+--     # t0 = swapped
+--     # t1 = i
+-- 1: # do loop
+--     li t0, 0          # swapped = false
+--     li t1, 1          # i = 1
+-- 2: # for loop
+--     bge t1, a1, 2f    # break if i >= size
+--     slli t3, t1, 2    # scale i by 4 (for int)
+--     add t3, a0, t3    # new scaled memory address
+--     lw  t4, -4(t3)    # load list[i-1] into t4
+--     lw  t5, 0(t3)     # load list[i] into t5
+--     bleu t4, t5, 3f    # if list[i-1] < list[i], it's in position
+--     # if we get here, we need to swap
+--     li  t0, 1         # swapped = true
+--     sw  t4, 0(t3)     # list[i] = list[i-1]
+--     sw  t5, -4(t3)    # list[i-1] = list[i]
+-- 3: # bottom of for loop body
+--     addi t1, t1, 1    # i++
+--     j    2b           # loop again
+-- 2: # bottom of do loop body
+--     bnez t0, 1b       # loop if swapped = true
+--     ret               # return via return address register
+08000513
+02000593
+01000313
+00c000ef
+02c000ef
+0000006f
+00000293
+00b2de63
+00229e13
+01c50e33
+006e2023
+00128293
+fff30313
+fe9ff06f
+00008067
+00000293
+00100313
+02b35663
+00231e13
+01c50e33
+ffce2e83
+000e2f03
+01df7863
+00100293
+01de2023
+ffee2e23
+00130313
+fd9ff06f
+fc0296e3
+00008067
