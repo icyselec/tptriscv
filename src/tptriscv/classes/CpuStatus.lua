@@ -20,6 +20,10 @@ function CpuStatus:new (o)
 	return self
 end
 
+function CpuStatus:del ()
+	return true
+end
+
 ---@param stat_name string
 ---@return any
 function CpuStatus:get_status (stat_name)

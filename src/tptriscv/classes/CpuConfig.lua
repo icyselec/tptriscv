@@ -2,14 +2,8 @@
 ---@field private frequency number
 ---@field private extension string[]
 local CpuConfig = {
-	---@class RefRelated
-	---@field ref_mem Mem
-	ref_instance = {
-		ref_mem = {}
-	},
 	-- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
-	frequency = 0,
-	extension = {},
+	frequency = 5,
 	check_aligned = false,
 	disasm = false,
 }
@@ -23,10 +17,17 @@ function CpuConfig:new (o)
 	setmetatable(o, self)
 	self.__index = self
 
-	self.frequency = 1
-	self.extension = { "RV32I", "RV32C" }
-
 	return o
+end
+
+function CpuConfig:del ()
+	for k, _ in pairs(self) do
+		if type(self[k]) ~= "function" then
+			self:set_config(k, nil)
+		end
+	end
+
+	return true
 end
 
 ---@param conf_name string

@@ -20,13 +20,15 @@ function Instance:new (o)
 	setmetatable(o, self)
 	self.__index = self
 
+	o.mem = Mem:new()
+
 	o.cpu = {}
-	o.cpu[1] = Cpu:new()
+	o.cpu[1] = Cpu:new{mem = o.mem}
 	o.cpu[1].conf = CpuConfig:new()
 	o.cpu[1].conf:set_config("ref_instance", o)
 	o.cpu[1].stat = CpuStatus:new()
 
-	o.mem = Mem:new()
+
 
 	o.cpu[1].refs:add("instance", o)
 	o.cpu[1].refs:add("mem", o.mem)
@@ -35,8 +37,10 @@ function Instance:new (o)
 end
 
 function Instance:del ()
+	self.cpu[1].refs:del()
+	self.mem:del()
+
 	Rv.instance[self.id] = nil
-	self = nil
 end
 
 return Instance

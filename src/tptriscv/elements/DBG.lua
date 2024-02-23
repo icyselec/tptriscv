@@ -67,7 +67,7 @@ elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 			local msg = ""
 
 			for j = 0, 31 do
-				local value = reg:get_gp(i)
+				local value = reg:get_gp(j)
 
 				if value == nil then
 					value = "nil"

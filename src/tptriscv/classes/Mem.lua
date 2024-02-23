@@ -13,6 +13,7 @@ local Mem = {
 		segment_size = 32,
 		panic_when_fault = false,
 		segment_map = {},
+		check_memory_usage = true,
 		memory_usage = 0,
 	},
 }
@@ -29,6 +30,15 @@ function Mem:new (o)
 	setmetatable(o.debug.segment_map, { __index = function() return 0 end })
 
 	return o
+end
+
+function Mem:del ()
+	self.conf = nil
+	self.stat = nil
+	self.data = nil
+	self.debug = nil
+
+	return true
 end
 
 ---@return nil
@@ -363,7 +373,7 @@ function Mem:safe_write (cpu, ptr, mod, val)
 		cpu:halt("Mem:safe_write: Memory out of bound.")
 	end
 
-	if self.debug.segmentation == true then
+	if self.debug.segmentation then
 		local sub_ea = bit.rshift(ptr, 2)
 		sub_ea = bit.rshift(sub_ea, self.debug.segment_size)
 		if self.debug.segment_map[sub_ea] == true then
@@ -371,6 +381,14 @@ function Mem:safe_write (cpu, ptr, mod, val)
 				cpu:halt("Segmentation fault")
 				return
 			end
+		end
+	end
+
+	if self.debug.check_memory_usage then
+		local ea = self:get_effective_address(ptr)
+
+		if self.debug.memory_usage < ea then
+			self.debug.memory_usage = ea - 1
 		end
 	end
 
@@ -472,7 +490,7 @@ function Mem:dump_memory (base, size, filename)
 
 	-- unlimited mode, but the maximum limit is determined by memory usage.
 	if size == -1 then
-		size = self.debug.memory_usage + 1
+		size = self.debug.memory_usage
 	end
 
 	repeat

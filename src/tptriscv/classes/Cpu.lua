@@ -12,8 +12,6 @@ local Cpu = {
 	stat = {},
 	---@class Reg
 	regs = {},
-	---@class Mem
-	ref_mem = {},
 	---@class Instruction
 	instruction = {}
 }
@@ -28,6 +26,8 @@ function Cpu:new (o)
 
 	o.regs = Reg:new()
 	o.refs = RefRelated:new()
+	o.refs:add("mem", o.mem)
+	o.mem = nil
 
 	local instruction = Instruction:new{core = o}
 
@@ -38,6 +38,13 @@ function Cpu:new (o)
 	o.instruction = instruction
 
 	return o
+end
+
+function Cpu:del ()
+	self.instruction:del()
+	self.refs:del()
+	self.regs:del()
+	return true
 end
 
 

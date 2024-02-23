@@ -23,6 +23,12 @@ function Reg:new (o)
 	return o
 end
 
+function Reg:del ()
+	self.gp = nil
+	self.fp = nil
+	return true
+end
+
 ---@param r Integer The number of the register, the value is from 0 to 31.
 ---@param v Integer This is the value if you want to store the value in the register.
 ---@return nil

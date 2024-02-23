@@ -26,6 +26,12 @@ function Instruction:new (o)
 	return o
 end
 
+function Instruction:del ()
+	self.core = nil
+	self.cmds = nil
+	return true
+end
+
 ---@return boolean
 function Instruction:fetch_instruction ()
 	---@type Cpu

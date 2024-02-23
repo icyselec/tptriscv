@@ -11,6 +11,16 @@ function RefRelated:new (o)
 	return o
 end
 
+function RefRelated:del ()
+	for k, _ in pairs(self) do
+		if type(self[k]) ~= "function" then
+			self:remove(k)
+		end
+	end
+
+	return true
+end
+
 ---@param s string Related object name.
 ---@param o any Related object reference.
 ---@return nil
@@ -18,7 +28,7 @@ function RefRelated:add (s, o)
 	self[s] = o
 end
 
-function RefRelated:del (s)
+function RefRelated:remove (s)
 	self[s] = nil
 end
 
