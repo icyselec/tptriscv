@@ -1,7 +1,7 @@
 ---@class Reg
 ---@field private gp Integer[]
 ---@field private pc Integer
----@field private fp f64[]
+---@field private fp F64[]
 ---@field private fcsr Integer
 local Reg = {
 	-- general-purpose register
@@ -32,7 +32,7 @@ end
 ---@param r Integer The number of the register, the value is from 0 to 31.
 ---@param v Integer This is the value if you want to store the value in the register.
 ---@return nil
-function Reg:set_gp (r, v)
+function Reg:setGp (r, v)
 	if r < 0 or r > 31 then
 		print("Reg:set_gp: Invalid register access, register number is " .. tostring(r))
 		return
@@ -47,46 +47,54 @@ end
 
 ---@param r Integer The number of the register, the value is from 0 to 31.
 ---@return Integer
-function Reg:get_gp (r)
+function Reg:getGp (r)
 	return self.gp[r+1]
 end
 
 
----@param v u32 This is the value if you want to store the value in the program counter.
+---@param v U32 This is the value if you want to store the value in the program counter.
 ---@return nil
-function Reg:set_pc (v)
+function Reg:setPc (v)
 	self.pc = bit.band(v, 0xFFFFFFFF)
 end
 
----@return u32
-function Reg:get_pc ()
-	return self.pc
+---@return U32
+function Reg:getPc ()
+	return self.pc --[[@as U32]]
 end
 
 
 
----@param size u32 instruction length.
+---@param size U32 instruction length.
 ---@return nil
-function Reg:update_pc (size)
+function Reg:updatePc (size)
 	if size < 0 or size > 8 then
 		return
 	end
 
-	self:set_pc(self:get_pc() + size)
+	self:setPc(self:getPc() + size)
 end
 
---- get the register assembly symbol
----@param reg_number number Number of register.
+--- get the ABI register name
+---@param regNumber number Number of register.
 ---@return string|nil
-function Reg:getname (reg_number)
-	local regtab = {
+function Reg:getAbiName (regNumber)
+	local regTab = {
 		"ZERO", "RA", "SP", "GP", "TP", "T0", "T1", "T2",
 		"S0/FP", "S1", "A0", "A1", "A2", "A3", "A4", "A5",
 		"A6", "A7", "S2", "S3", "S4", "S5", "S6", "S7",
 		"S8", "S9", "S10", "S11", "T3", "T4", "T5", "T6",
 	}
 
-	return regtab[reg_number+1]
+	return regTab[regNumber+1]
+end
+
+---@deprecated
+--- get the register name
+---@param regNumber number
+---@return string|nil
+function Reg:getname (regNumber)
+	return Reg:getAbiName(regNumber)
 end
 
 return Reg

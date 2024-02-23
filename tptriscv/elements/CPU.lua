@@ -39,12 +39,12 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 
 	local instance = Rv.instance[instance_id]
 	local cpu = instance.cpu[1]
-	local frequency = cpu.conf:get_config("frequency") -- multiprocessiong not yet
+	local frequency = cpu.conf:getConfig("frequency") -- multiprocessiong not yet
 
-	if cpu.stat:get_status("online") then
+	if cpu.stat:getStatus("online") then
 		for _ = 1, frequency do
 			cpu:run(nil) -- dbgarg is nil
-			if not cpu.stat:get_status("online") then break end
+			if not cpu.stat:getStatus("online") then break end
 		end
 	end
 

@@ -1,4 +1,6 @@
--- static class
+local Boolean = require("tptriscv.classes.Boolean")
+
+---static class
 ---@class Integer
 local Integer = {}
 
@@ -21,7 +23,7 @@ end
 ---@param y Integer
 ---@return boolean # Returns the true value if both are positive or negative; returns the false value if only one is negative.
 function Integer:exclusive_or (x, y)
-	return (x < 0 or y < 0) and not (x < 0 and y < 0)
+	return Boolean:exclusive_or(x, y)
 end
 
 

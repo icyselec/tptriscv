@@ -20,8 +20,7 @@ elements.property(RVREGISTER, "Diffusion", 0)
 elements.property(RVREGISTER, "Properties", elem.TYPE_SOLID + elem.PROP_NOCTYPEDRAW + elem.PROP_NOAMBHEAT + elem.PROP_HOT_GLOW)
 
 local enabled = false
-local self_id = 0
-local before_pc = -1
+local beforePc = -1
 local cpu
 
 elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
@@ -30,7 +29,7 @@ elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
 		Rv.instance[1].cpu[1].conf:set_config("disasm", true)
 		cpu = Rv.instance[1].cpu[1]
 
-		if not cpu.refs.mem:load_memory(0, -1, tpt.input("File Load", "Which file do you want to open?")) then
+		if not cpu.refs.mem:loadMemory(0, -1, tpt.input("File Load", "Which file do you want to open?")) then
 			Rv.instance[1]:del()
 			tpt.message_box("Error", "Please check the file name or permission.")
 			return
@@ -45,17 +44,17 @@ end)
 
 elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 	if enabled then
-		for _ = 1, cpu.conf:get_config("frequency") do
+		for _ = 1, cpu.conf:getConfig("frequency") do
 			cpu:run{allowPseudoOp = true, lowercase = true}
 		end
 	else
 		return
 	end
 
-	if Rv.instance[1].cpu[1].regs:get_pc() == before_pc then
+	if Rv.instance[1].cpu[1].regs:getPc() == beforePc then
 		local filename = tpt.input("File Dump", "What file do you want to print?")
 
-		while filename ~= "" and not Rv.instance[1].mem:dump_memory(0, -1, filename) do
+		while filename ~= "" and not Rv.instance[1].mem:dumpMemory(0, -1, filename) do
 			tpt.message_box("Error", "Please check the file name or permission.")
 			filename = tpt.input("File Dump", "What file do you want to print? (If left blank, it will not dump memory.)")
 		end
@@ -67,7 +66,7 @@ elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 			local msg = ""
 
 			for j = 0, 31 do
-				local value = reg:get_gp(j)
+				local value = reg:getGp(j)
 
 				if value == nil then
 					value = "nil"
@@ -75,16 +74,16 @@ elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 
 				msg = string.format("%sR%d:\t0x%X\n", msg, j, value)
 			end
-			msg = string.format("%sPC:\t0x%X", msg, reg:get_pc())
+			msg = string.format("%sPC:\t0x%X", msg, reg:getPc())
 
 			tpt.message_box("RISC-V Register Dump", msg)
 		end
 
 		enabled = false
-		before_pc = -1
+		beforePc = -1
 		Rv.instance[1]:del()
 		sim.partKill(i)
 	else
-		before_pc = Rv.instance[1].cpu[1].regs:get_pc()
+		before_pc = Rv.instance[1].cpu[1].regs:getPc()
 	end
 end)

@@ -10,7 +10,7 @@ local function setter (i, field, val)
 	sim.partProperty(i, sim[field], val)
 end
 
-local function set_tmparg (i, tmp, tmp2, tmp3, tmp4)
+local function setTmpArg (i, tmp, tmp2, tmp3, tmp4)
 	tmp  = tmp  or 0
 	tmp2 = tmp2 or 0
 	tmp3 = tmp3 or 0
@@ -22,7 +22,7 @@ local function set_tmparg (i, tmp, tmp2, tmp3, tmp4)
 	sim.partProperty(i, sim.FIELD_TMP4, tmp4)
 end
 
-local function set_return (i, err_number)
+local function setReturn (i, err_number)
 	err_number = err_number or 0
 	if err_number < 0 then err_number = -err_number end
 	setter(i, 'FIELD_LIFE', -err_number)
@@ -32,39 +32,39 @@ end
 
 
 
-function Apis:new_instance (i, x, y, s, n)
+function Apis:newInstance (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	if Rv.instance[id] ~= nil then
-		Rv.UI.print_error("Apis:new_instance: Instance id already in use.")
+		Rv.UI.print_error("Apis:newInstance: Instance id already in use.")
 		return false
 	end
 
 	local instance = Instance:new{id = id}
 
 	if instance == nil then
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	Rv.instance[id] = instance
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:del_instance (i, x, y, s, n)
+function Apis:delInstance (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	if Rv.instance[id] == nil then
-		print("Apis:del_instance: Delete failed. please restart the game.")
-		return set_return(i, 1)
+		print("Apis:delInstance: Delete failed. please restart the game.")
+		return setReturn(i, 1)
 	end
 
 	Instance:del()
 
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:load_memory (i, x, y, s, n)
+function Apis:loadMemory (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local base = getter(i, 'FIELD_TMP3')
@@ -74,15 +74,15 @@ function Apis:load_memory (i, x, y, s, n)
 
 	local filename = tpt.input("File Load", "Which file do you want to open?")
 
-	if not mem:load_memory(base, size, filename) then
+	if not mem:loadMemory(base, size, filename) then
 		tpt.message_box("Error", "Memory load failed.")
-		return set_return(i, 1)
+		return setReturn(i, 1)
 	end
 
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:dump_memory (i, x, y, s, n)
+function Apis:dumpMemory (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local base = getter(i, 'FIELD_TMP3')
@@ -92,41 +92,41 @@ function Apis:dump_memory (i, x, y, s, n)
 
 	local filename = tpt.input("File Dump", "What file do you want to print?")
 
-	if not mem:dump_memory(base, size, filename) then
+	if not mem:dumpMemory(base, size, filename) then
 		tpt.message_box("Error", "Memory dump failed.")
-		return set_return(i, 1)
+		return setReturn(i, 1)
 	end
 
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:get_register_value (i, x, y, s, n)
+function Apis:getRegisterValue (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
-	local cpu_number = getter(args.i, 'FIELD_TMP3')
-	local reg_number = getter(args.i, 'FIELD_TMP4')
+	local cpuNumber = getter(args.i, 'FIELD_TMP3')
+	local regNumber = getter(args.i, 'FIELD_TMP4')
 
-	local cpu = Rv.instance[id].cpu[cpu_number]
+	local cpu = Rv.instance[id].cpu[cpuNumber]
 	if cpu == nil then
-		return set_return(i, 1)
+		return setReturn(i, 1)
 	end
 
 	local reg = cpu.regs
 
-	local retval
+	local retVal
 
-	if reg_number == 0 then
-		retval = reg:get_pc()
+	if regNumber == 0 then
+		retVal = reg:getPc()
 	else
-		retval = reg:get_gp(reg_number - 1)
+		retVal = reg:getGp(regNumber - 1)
 	end
 
 
-	set_tmparg(i, retval)
-	return 	set_return(i)
+	setTmpArg(i, retVal)
+	return 	setReturn(i)
 end
 
-function Apis:set_register_value (i, x, y, s, n)
+function Apis:setRegisterValue (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter('FIELD_TMP3')
@@ -134,19 +134,19 @@ function Apis:set_register_value (i, x, y, s, n)
 
 	local cpu = Rv.instance[id].cpu[cpu_number]
 	if cpu == nil then
-		return set_return(i, 1)
+		return setReturn(i, 1)
 	end
 
 	if reg_number == 0 then
-		cpu:set_pc(getter(i, 'FIELD_TMP'))
+		cpu:setPc(getter(i, 'FIELD_TMP'))
 	else
-		cpu:set_gp(reg_number, getter(i, 'FIELD_TMP'))
+		cpu:setGp(reg_number, getter(i, 'FIELD_TMP'))
 	end
 
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:print_register_dump (i, x, y, s, n)
+function Apis:printRegisterDump (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local cpu_number = getter(i, 'FIELD_TMP3')
@@ -157,30 +157,30 @@ function Apis:print_register_dump (i, x, y, s, n)
 
 	if cpu == nil then
 		tpt.message_box("Error", "Invalid instance ID.")
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	local msg = ""
 
 	for i = 0, 31 do
-		local value = reg:get_gp(i)
+		local value = reg:getGp(i)
 		if value == nil then value = "nil" end
 
 		if reg_format == 0 then
 			msg = string.format("%sR%d:\t0x%X\n", msg, i, value)
 		else
-			msg = string.format("%s%s:\t0x%X\n", msg, Reg:getname(i), value)
+			msg = string.format("%s%s:\t0x%X\n", msg, Reg:getAbiName(i), value)
 		end
 	end
-	msg = string.format("%sPC:\t0x%X", msg, reg:get_pc())
+	msg = string.format("%sPC:\t0x%X", msg, reg:getPc())
 
 	tpt.message_box("RISC-V Register Dump", msg)
 
 	return true
 end
 
-function Apis:print_memory_dump (i, x, y, s, n)
+function Apis:printMemoryDump (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local beg = getter(i, 'FIELD_TMP3')
@@ -191,14 +191,14 @@ function Apis:print_memory_dump (i, x, y, s, n)
 
 	if beg > max then
 		tpt.message_box("Error", "Invalid range.")
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	if max - beg > 16 then
 		tpt.message_box("Error", "Range too big.")
-		set_tmparg(i)
-		return set_return(i, 2)
+		setTmpArg(i)
+		return setReturn(i, 2)
 	end
 
 	for j = beg, max, 16 do
@@ -216,84 +216,103 @@ function Apis:print_memory_dump (i, x, y, s, n)
 	return true
 end
 
-function Apis:get_env_var (i, x, y, s, n)
+function Apis:getModEnvironmentVar (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local key = tpt.input("Get Mod Environment Variable", "Input Variable Name:")
 
-	return set_return(i, RV[key])
+	return setReturn(i, RV[key])
 end
 
-function Apis:set_env_var (i, x, y, s, n)
+function Apis:setModEnvironmentVar (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
 	local key = tpt.input("Get Mod Environment Variable", "Input Variable Name:")
 	local val = tpt.input("Set Mod Environment Variable", "Input Variable Value:")
 
 	RV[key] = val
-	return set_return(i)
+	return setReturn(i)
 end
 
-function Apis:get_config (i, x, y, s, n)
+function Apis:getConfig (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
-	local cpu_number = getter(i, 'FIELD_TMP3') + 1
-	local cpu = Rv.instance[id].cpu[cpu_number]
+	local cpu = Rv.instance[id].cpu[getter(i, 'FIELD_TMP3') + 1]
 	if cpu == nil then
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	local key = tpt.input("Get CPU Configuration", "Input Configuration Name:")
 
-	return set_return(i, cpu.conf:get_config(key))
+	return setReturn(i, cpu.conf:get_config(key))
 end
 
-function Apis:set_config (i, x, y, s, n)
+function Apis:setConfig (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
-	local cpu_number = getter(i, 'FIELD_TMP3') + 1
-	local cpu = Rv.instance[id].cpu[cpu_number]
+	local cpu = Rv.instance[id].cpu[getter(i, 'FIELD_TMP3') + 1]
 	if cpu == nil then
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	local key = tpt.input("Set CPU Configuration", "Input Configuration Name:")
 	local val = tpt.input("Set CPU Configuration", "Input Configuration Value:")
 
-	return set_return(i, cpu.conf:set_config(key, val))
+	return setReturn(i, cpu.conf:set_config(key, val))
 end
 
-function Apis:get_status (i, x, y, s, n)
+function Apis:getStatus (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
-	local cpu_number = getter(i, 'FIELD_TMP3') + 1
-	local cpu = Rv.instance[id].cpu[cpu_number]
+	local cpu = Rv.instance[id].cpu[getter(i, 'FIELD_TMP3') + 1]
 	if cpu == nil then
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	local key = tpt.input("Get CPU Status", "Input Status Name:")
 
-	return set_return(i, cpu.stat:get_status(key))
+	return setReturn(i, cpu.stat:get_status(key))
 end
 
-function Apis:set_status (i, x, y, s, n)
+function Apis:setStatus (i, x, y, s, n)
 	local id = getter(i, 'FIELD_CTYPE')
 
-	local cpu_number = getter(i, 'FIELD_TMP3') + 1
-	local cpu = Rv.instance[id].cpu[cpu_number]
+	local cpu = Rv.instance[id].cpu[getter(i, 'FIELD_TMP3') + 1]
 	if cpu == nil then
-		set_tmparg(i)
-		return set_return(i, 1)
+		setTmpArg(i)
+		return setReturn(i, 1)
 	end
 
 	local key = tpt.input("Set Status", "Input Status Name:")
 	local val = tpt.input("Set CPU Status", "Input Status Value:")
 
-	return set_return(i, cpu.conf:set_status(key, val))
+	return setReturn(i, cpu.conf:set_status(key, val))
+end
+
+local ApiTab = {
+		Apis.newInstance,			-- 1
+		Apis.delInstance,			-- 2
+		Apis.loadMemory,			-- 3
+		Apis.dumpMemory,			-- 4
+		Apis.getRegisterValue,		-- 5
+		Apis.setRegisterValue,		-- 6
+		Apis.printRegisterDump,		-- 7
+		Apis.printMemoryDump,		-- 8
+		nil,						-- 9
+		nil,						-- 10
+		Apis.getModEnvironmentVar,	-- 11
+		Apis.setModEnvironmentVar,	-- 12
+		Apis.getConfig,				-- 13
+		Apis.setConfig,				-- 14
+		Apis.getStatus,				-- 15
+		Apis.setStatus,				-- 16
+}
+
+function Apis:getApiTab ()
+	return ApiTab
 end
 
 return Apis

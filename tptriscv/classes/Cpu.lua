@@ -63,11 +63,11 @@ end
 ---@param msg string
 ---@return nil
 function Cpu:halt (msg)
-	self.stat:set_status("online", false)
+	self.stat:setStatus("online", false)
 	tpt.message_box("Error", "Processor halted! : " .. msg)
 end
 
-function Cpu:print_debug_info ()
+function Cpu:printDebuginfo ()
 
 end
 

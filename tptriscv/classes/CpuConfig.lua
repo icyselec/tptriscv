@@ -32,14 +32,14 @@ end
 
 ---@param conf_name string
 ---@return any
-function CpuConfig:get_config (conf_name)
+function CpuConfig:getConfig (conf_name)
 	return self[conf_name]
 end
 
 ---@param conf_name string
 ---@param value any
 ---@return nil
-function CpuConfig:set_config (conf_name, value)
+function CpuConfig:setConfig (conf_name, value)
 	self[conf_name] = value
 end
 

@@ -1,5 +1,8 @@
 .file stddef.asm
 
+.section .data
+_strtok_cur_ptr: .word 0
+
 .section .text
 .globl bzero
 .globl memchr
@@ -544,8 +547,54 @@ strstr:
 	ret
 
 strtok:
+	## args
+	# a0 = char *restrict str
+	# a1 = const char *restrict delim
+	## local
+	## return
+	# a0 = return a pointer to the next token, or NULL if there are no more tokens.
 	UNIMP
 	ret
+	li t1, 0
+	li t2, 0
+	bnez a0, 1f # If a0 is not null, then start the new state
+	la a0, _strtok_cur_ptr # Load current state ptr
+	lw a0, 0(a0)
+1:
+	add t0, a0, t1
+	lb t0, 0(t0)
+	beqz t0, 4f
+2:
+	add t3, a1, t2
+	lb t3, 0(t3)
+	beqz t3, 2f
+	addi t2, t2, 1
+	beq t0, t3, 3f
+2:
+	addi t1, t1, 1
+	j 1b
+3:
+	la t0, _strtok_cur_ptr
+	add t3, a0,
+
+4:
+	li a0, NULL
+	ret
+
+
+
+	la t3, _strtok_cur_ptr
+	sw t2, 0(t3) # Store current state
+	lw a0, 4(sp)
+	j 2f
+1:
+	li a0, NULL
+2:
+	lw ra, 0(sp)
+	addi sp, sp,  16 # Leave stack frame
+	ret
+
+
 strxfrm:
 	UNIMP
 	ret

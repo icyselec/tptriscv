@@ -25,7 +25,6 @@ function Instance:new (o)
 	o.cpu = {}
 	o.cpu[1] = Cpu:new{mem = o.mem}
 	o.cpu[1].conf = CpuConfig:new()
-	o.cpu[1].conf:set_config("ref_instance", o)
 	o.cpu[1].stat = CpuStatus:new()
 
 

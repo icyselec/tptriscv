@@ -26,14 +26,14 @@ end
 
 ---@param stat_name string
 ---@return any
-function CpuStatus:get_status (stat_name)
+function CpuStatus:getStatus (stat_name)
 	return self[stat_name]
 end
 
 ---@param stat_name string
 ---@param value any
 ---@return nil
-function CpuStatus:set_status (stat_name, value)
+function CpuStatus:setStatus (stat_name, value)
 	self[stat_name] = value
 end
 
