@@ -64,10 +64,14 @@ function Cpu:print_debug_info ()
 
 end
 
-function Cpu:run (disasm)
-	local disassembled = self.instruction:step(disasm)
+function Cpu:run (dbgarg)
+	local disassembled = self.instruction:step(dbgarg)
 
-	if disasm then
+	if dbgarg then
+		if dbgarg.lowercase then
+			disassembled = string.lower(disassembled)
+		end
+
 		print(disassembled)
 	end
 end

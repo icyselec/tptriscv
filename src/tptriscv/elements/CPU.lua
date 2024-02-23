@@ -43,7 +43,7 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 
 	if cpu.stat:get_status("online") then
 		for _ = 1, frequency do
-			cpu:run(true)
+			cpu:run(nil) -- dbgarg is nil
 			if not cpu.stat:get_status("online") then break end
 		end
 	end

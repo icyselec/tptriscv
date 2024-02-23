@@ -30,29 +30,34 @@ elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
 		Rv.instance[1].cpu[1].conf:set_config("disasm", true)
 		cpu = Rv.instance[1].cpu[1]
 
-		if not cpu.refs.mem:load_memory(0, 255, tpt.input("File Load", "Which file do you want to open?")) then
+		if not cpu.refs.mem:load_memory(0, -1, tpt.input("File Load", "Which file do you want to open?")) then
 			Rv.instance[1]:del()
 			tpt.message_box("Error", "Please check the file name or permission.")
 			return
 		end
 
 		enabled = true
+	else
+		tpt.message_box("Error", "Multiple debugging at once cannot work.")
+		sim.partKill(i)
 	end
 end)
 
-elements.property(RVREGISTER, "Update", function(...)
+elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 	if enabled then
 		for _ = 1, cpu.conf:get_config("frequency") do
-			cpu:run(true)
+			cpu:run{allowPseudoOp = true, lowercase = true}
 		end
 	else
 		return
 	end
 
 	if Rv.instance[1].cpu[1].regs:get_pc() == before_pc then
-		if not Rv.instance[1].mem:dump_memory(0, 255, tpt.input("File Dump", "What file do you want to print?")) then
+		local filename = tpt.input("File Dump", "What file do you want to print?")
+
+		while filename ~= "" and not Rv.instance[1].mem:dump_memory(0, -1, filename) do
 			tpt.message_box("Error", "Please check the file name or permission.")
-			return
+			filename = tpt.input("File Dump", "What file do you want to print? (If left blank, it will not dump memory.)")
 		end
 
 		local answer = tpt.input("Waiting for Input", "Would you like to see the register dump?\n(Please answer with y or Y, and any other inputs will be treated as deny.)", "y")
@@ -61,14 +66,14 @@ elements.property(RVREGISTER, "Update", function(...)
 			local reg = Rv.instance[1].cpu[1].regs
 			local msg = ""
 
-			for i = 0, 31 do
+			for j = 0, 31 do
 				local value = reg:get_gp(i)
 
 				if value == nil then
 					value = "nil"
 				end
 
-				msg = string.format("%sR%d:\t0x%X\n", msg, i, value)
+				msg = string.format("%sR%d:\t0x%X\n", msg, j, value)
 			end
 			msg = string.format("%sPC:\t0x%X", msg, reg:get_pc())
 
@@ -78,6 +83,7 @@ elements.property(RVREGISTER, "Update", function(...)
 		enabled = false
 		before_pc = -1
 		Rv.instance[1]:del()
+		sim.partKill(i)
 	else
 		before_pc = Rv.instance[1].cpu[1].regs:get_pc()
 	end

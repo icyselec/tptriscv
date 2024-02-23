@@ -97,9 +97,9 @@ function Instruction:fetch_instruction ()
 	]=]
 end
 
----@param disasm boolean
----@return boolean|nil
-function Instruction:decode_ext_m (disasm)
+---@param dbgarg table
+---@return string
+function Instruction:decode_ext_m (dbgarg)
 	local cmd = self.cmds[1]
 	local rd  = bit.rshift(bit.band(cmd, 0x00000F80),  7)
 	local rs1 = bit.rshift(bit.band(cmd, 0x000F8000), 15)
@@ -113,7 +113,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			reg:set_gp(rd, reg:get_gp(rs1) * reg:get_gp(rs2))
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "MUL", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -121,7 +121,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			cpu:halt("Instruction:decode_ext_m: Not implemented instruction, processor is stopped.")
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "MULH", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -129,7 +129,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			cpu:halt("Instruction:decode_ext_m: Not implemented instruction, processor is stopped.")
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "MULHSU", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -137,7 +137,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			cpu:halt("Instruction:decode_ext_m: Not implemented instruction, processor is stopped.")
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "MULHU", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -150,7 +150,7 @@ function Instruction:decode_ext_m (disasm)
 
 			reg:set_gp(rd, reg:get_gp(rs1) / reg:get_gp(rs2))
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "DIV", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -158,7 +158,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			cpu:halt("Instruction:decode_ext_m: Not implemented instruction, processor is stopped.")
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "DIVU", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -171,7 +171,7 @@ function Instruction:decode_ext_m (disasm)
 
 			reg:set_gp(rd, reg:get_gp(rs1) % reg:get_gp(rs2))
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "REM", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -179,7 +179,7 @@ function Instruction:decode_ext_m (disasm)
 		function ()
 			cpu:halt("Instruction:decode_ext_m: Not implemented instruction, processor is stopped.")
 
-			if disasm then
+			if dbgarg then
 				return string.format("%s %s, %s, %s", "REMU", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 			end
 		end,
@@ -190,10 +190,10 @@ end
 
 --- Decoding and execute 16-bit length instruction.
 ---@private
----@param disasm boolean If true, then print the disassembled instruction.
+---@param dbgarg table If non-nil, then print the disassembled instruction.
 ---@return string|nil
-function Instruction:decode_16bit (disasm)
-	disasm = disasm or false
+function Instruction:decode_16bit (dbgarg)
+	dbgarg = dbgarg or false
 	local cpu = self.core
 	local mem = self.core.ref_mem
 	local reg = self.core.regs
@@ -225,7 +225,7 @@ function Instruction:decode_16bit (disasm)
 					if bit.band(cmd, 0x0000FFFF) == 0 then
 						cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
 
-						if disasm then
+						if dbgarg then
 							return RV.ILLEGAL_INSTRUCTION
 						else
 							return nil
@@ -234,15 +234,15 @@ function Instruction:decode_16bit (disasm)
 
 					reg:set_gp(rd, reg:get_gp(2) + nzuimm)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.ADDI4SPN", Reg:getname(rd), nzuimm)
 					end
 				end,
 				-- C.FLD -- not yet implemented
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 
-					if disasm then
+					if dbgarg then
 						return RV.ILLEGAL_INSTRUCTION
 					end
 				end,
@@ -250,52 +250,46 @@ function Instruction:decode_16bit (disasm)
 				function ()
 					reg:set_gp(rd, mem:safe_read(cpu, reg:get_gp(rs1) + uimm, 3) --[[@as i32]])
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %s(%s)", "C.LW", Reg:getname(rd), tostring(uimm), Reg:getname(rs1))
 					end
 				end,
 				-- C.FLW
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 
-					if disasm then
+					if dbgarg then
 						return RV.ILLEGAL_INSTRUCTION
-					else
-						return nil
 					end
 				end,
 				-- Reserved
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 
-					if disasm then
+					if dbgarg then
 						return RV.ILLEGAL_INSTRUCTION
-					else
-						return nil
 					end
 				end,
 				-- C.FSD -- not yet implemented
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 
-					if disasm then
+					if dbgarg then
 						return RV.ILLEGAL_INSTRUCTION
-					else
-						return nil
 					end
 				end,
 				-- C.SW
 				function ()
 					mem:safe_write(cpu, reg:get_gp(rs1) + uimm, 3, reg:get_gp(rs2))
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d(%s)", "C.SW", Reg:getname(rs2), uimm, Reg:getname(rs1))
 					end
 				end,
 				-- C.FSW
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 
-					if disasm then
+					if dbgarg then
 						return RV.ILLEGAL_INSTRUCTION
 					end
 				end,
@@ -324,7 +318,7 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(rs1, reg:get_gp(rs1) + imm6)
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.ADDI", Reg:getname(rs1), imm6)
 					end
 				end,
@@ -343,7 +337,7 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(1, reg:get_pc() + 2)
 					reg:set_pc(reg:get_pc() + imm11)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.JAL", Reg:getname(1), imm11)
 					end
 				end,
@@ -360,7 +354,7 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(rs1, imm6)
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.LI", Reg:getname(rs1), imm6)
 					end
 				end,
@@ -380,7 +374,7 @@ function Instruction:decode_16bit (disasm)
 						imm16sp = bit.arshift(imm16sp, 22)
 
 						reg:set_gp(rs1, reg:get_gp(rs1) + imm16sp)
-						if disasm then
+						if dbgarg then
 							retstr = string.format("%s %s, %d", "C.ADDI16SP", Reg:getname(2), imm16sp)
 						end
 					-- C.LUI
@@ -390,7 +384,7 @@ function Instruction:decode_16bit (disasm)
 						imm6 = bit.arshift(imm6, 14)
 
 						reg:set_gp(rs1, imm6)
-						if disasm then
+						if dbgarg then
 							retstr = string.format("%s %s, %d", "C.LUI", Reg:getname(rs1), imm6)
 						end
 					end
@@ -413,7 +407,7 @@ function Instruction:decode_16bit (disasm)
 							reg:set_gp(rd, bit.rshift(reg:get_gp(rd), rs2))
 							reg:update_pc(size)
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %d", "C.SRLI", Reg:getname(rd), rs2)
 							end
 						end,
@@ -427,7 +421,7 @@ function Instruction:decode_16bit (disasm)
 							reg:set_gp(rd, bit.arshift(reg:get_gp(rd), rs2))
 							reg:update_pc(size)
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %d", "C.SRAI", Reg:getname(rd), rs2)
 							end
 						end,
@@ -438,7 +432,7 @@ function Instruction:decode_16bit (disasm)
 							reg:set_gp(rd, bit.band(reg:get_gp(rd), imm6))
 							reg:update_pc(size)
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %d", "C.ANDI", Reg:getname(rd), imm6)
 							end
 						end,
@@ -449,7 +443,7 @@ function Instruction:decode_16bit (disasm)
 							rd = rs1
 
 							if bit.band(cmd, 0x1000) ~= 0 then
-								cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+								cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 								return RV.ILLEGAL_INSTRUCTION
 							end
 
@@ -458,7 +452,7 @@ function Instruction:decode_16bit (disasm)
 								function ()
 									reg:set_gp(rd, reg:get_gp(rs1) - reg:get_gp(rs2))
 
-									if disasm then
+									if dbgarg then
 										return string.format("%s %s, %s", "C.SUB", Reg:getname(rs1), Reg:getname(rs2))
 									end
 								end,
@@ -466,7 +460,7 @@ function Instruction:decode_16bit (disasm)
 								function ()
 									reg:set_gp(rd, bit.bxor(reg:get_gp(rs1), reg:get_gp(rs2)))
 
-									if disasm then
+									if dbgarg then
 										return string.format("%s %s, %s", "C.XOR", Reg:getname(rs1), Reg:getname(rs2))
 									end
 								end,
@@ -474,7 +468,7 @@ function Instruction:decode_16bit (disasm)
 								function ()
 									reg:set_gp(rd, bit.bor(reg:get_gp(rs1), reg:get_gp(rs2)))
 
-									if disasm then
+									if dbgarg then
 										return string.format("%s %s, %s", "C.OR", Reg:getname(rs1), Reg:getname(rs2))
 									end
 								end,
@@ -482,7 +476,7 @@ function Instruction:decode_16bit (disasm)
 								function ()
 									reg:set_gp(rd, bit.band(reg:get_gp(rs1), reg:get_gp(rs2)))
 
-									if disasm then
+									if dbgarg then
 										return string.format("%s %s, %s", "C.AND", Reg:getname(rs1), Reg:getname(rs2))
 									end
 								end,
@@ -510,7 +504,7 @@ function Instruction:decode_16bit (disasm)
 
 					reg:set_pc(reg:get_pc() + imm11)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %d", "C.J", imm11)
 					end
 				end,
@@ -527,7 +521,7 @@ function Instruction:decode_16bit (disasm)
 						reg:set_pc(reg:get_pc() + imm8)
 					end
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.BEQZ", Reg:getname(rs1), imm8)
 					end
 				end,
@@ -544,7 +538,7 @@ function Instruction:decode_16bit (disasm)
 						reg:set_pc(reg:get_pc() + imm8)
 					end
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.BNEZ", Reg:getname(rs1), imm8)
 					end
 				end,
@@ -571,13 +565,13 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(rd, bit.lshift(reg:get_gp(rd), nzuimm))
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "C.SLLI", Reg:getname(rd), nzuimm)
 					end
 				end,
 				-- C.FLDSP
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- C.LWSP
@@ -586,13 +580,13 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(rd, mem:safe_read(cpu, reg:get_gp(2) + uimm, 3) --[[@as i32]])
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d(%s)", "C.LWSP", Reg:getname(rd), uimm, Reg:getname(2))
 					end
 				end,
 				-- C.FLWSP (Not Implement)
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- C.JR/C.MV/C.EBREAK/C.JALR/C.ADD
@@ -631,7 +625,7 @@ function Instruction:decode_16bit (disasm)
 				end,
 				-- C.FSDSP
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 				-- C.SWSP
@@ -640,13 +634,13 @@ function Instruction:decode_16bit (disasm)
 					reg:set_gp(rd, mem:safe_write(cpu, reg:get_gp(2) + uimm, 3, reg:get_gp(rs2)) --[[@as number]])
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d(%s)", "C.SWSP", Reg:getname(rs2), uimm, Reg:getname(2))
 					end
 				end,
 				-- C.FSWSP (Not Implement)
 				function ()
-					cpu:halt("Cpu:decode_rv32c: Illegal instruction, processor is stopped.")
+					cpu:halt("Instruction:decode_16bit: Illegal instruction, processor is stopped.")
 					return RV.ILLEGAL_INSTRUCTION
 				end,
 			}
@@ -659,7 +653,7 @@ end
 
 
 
-function Instruction:decode_32bit (disasm)
+function Instruction:decode_32bit (dbgarg)
 	local cpu = self.core
 	local reg = cpu.regs
 	local mem = cpu.refs.mem
@@ -722,7 +716,7 @@ function Instruction:decode_32bit (disasm)
 					reg:set_gp(rd, mem:safe_read(cpu, reg:get_gp(rs1) + imm, fnt) --[[@as Integer]])
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						local ldtype = get_ldtype(fnt)
 
 						if ldtype == nil then
@@ -739,7 +733,7 @@ function Instruction:decode_32bit (disasm)
 					mem:safe_write(cpu, reg:get_gp(rs1) + imm, fnt, reg:get_gp(rs2))
 					reg:update_pc(size)
 
-					if disasm then
+					if dbgarg then
 						local sttype = get_sttype(fnt)
 
 						if sttype == nil then
@@ -769,7 +763,7 @@ function Instruction:decode_32bit (disasm)
 								reg:update_pc(size)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BEQ", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -783,7 +777,7 @@ function Instruction:decode_32bit (disasm)
 								reg:update_pc(size)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BNE", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -801,7 +795,7 @@ function Instruction:decode_32bit (disasm)
 								reg:update_pc(size)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BLT", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -815,7 +809,7 @@ function Instruction:decode_32bit (disasm)
 								reg:update_pc(size)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BGE", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -838,7 +832,7 @@ function Instruction:decode_32bit (disasm)
 								end
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BLTU", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -860,7 +854,7 @@ function Instruction:decode_32bit (disasm)
 								end
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "BGEU", Reg:getname(rs1), Reg:getname(rs2), target)
 							end
 						end,
@@ -902,12 +896,12 @@ function Instruction:decode_32bit (disasm)
 					reg:set_pc(bit.band(reg:get_gp(rs1) + imm, 0xFFFFFFFE)) -- then setting least-significant bit of the result to zero.
 					reg:set_gp(rd, backup)
 
-					if disasm then
-						if rd == 0 and rs1 == 1 then
+					if dbgarg then
+						if dbgarg.allowPseudoOp and rd == 0 and rs1 == 1 then
 							return "RET"
-						else
-							return string.format("%s %s, %d(%s)", "JALR", Reg:getname(rd), imm, Reg:getname(rs1))
 						end
+
+						return string.format("%s %s, %d(%s)", "JALR", Reg:getname(rd), imm, Reg:getname(rs1))
 					end
 				end,
 			}
@@ -943,7 +937,11 @@ function Instruction:decode_32bit (disasm)
 					reg:set_gp(rd, reg:get_pc() + 4)
 					reg:set_pc(reg:get_pc() + imm20)
 
-					if disasm then
+					if dbgarg then
+						if dbgarg.allowPseudoOp and rd == 0 then
+							return string.format("%s %s", "J", imm20)
+						end
+
 						return string.format("%s %s, %d", "JAL", Reg:getname(rd), imm20)
 					end
 				end,
@@ -967,7 +965,15 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, reg:get_gp(rs1) + imm)
 
-							if disasm then
+							if dbgarg then
+								if dbgarg.allowPseudoOp then
+									if rd == 0 and rs1 == 0 and imm == 0 then
+										return "NOP"
+									elseif imm == 0 then
+										return string.format("%s %s, %s", "MV", Reg:getname(rd), Reg:getname(rs1))
+									end
+								end
+
 								return string.format("%s %s, %s, %d", "ADDI", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end,
@@ -978,7 +984,7 @@ function Instruction:decode_32bit (disasm)
 							if bit.rshift(bit.band(imm, 0xFE0), 5) == 0 then
 								reg:set_gp(rd, bit.lshift(reg:get_gp(rs1), shamt))
 
-								if disasm then
+								if dbgarg then
 									return string.format("%s %s, %s, %d", "SLLI", Reg:getname(rd), Reg:getname(rs1), shamt)
 								end
 							else
@@ -994,7 +1000,7 @@ function Instruction:decode_32bit (disasm)
 								reg:set_gp(rd, 0)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "SLTI", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end,
@@ -1014,7 +1020,11 @@ function Instruction:decode_32bit (disasm)
 								end
 							end
 
-							if disasm then
+							if dbgarg then
+								if dbgarg.allowPseudoOp and imm == 1 then
+									return string.format("%s %s, %s", "SEQZ", Reg:getname(rd), Reg:getname(rs1))
+								end
+
 								return string.format("%s %s, %s, %d", "SLTIU", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end,
@@ -1022,7 +1032,11 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.bxor(reg:get_gp(rs1), imm))
 
-							if disasm then
+							if dbgarg then
+								if dbgarg.allowPseudoOp and imm == -1 then
+									return string.format("%s %s, %s", "NOT", Reg:getname(rd), Reg:getname(rs1))
+								end
+
 								return string.format("%s %s, %s, %s", "XORI", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end,
@@ -1046,7 +1060,7 @@ function Instruction:decode_32bit (disasm)
 
 							reg:set_gp(rd, bit.band(op(reg:get_gp(rs1), shamt), 0xFFFFFFFF))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", opname, Reg:getname(rd), Reg:getname(rs1), shamt)
 							end
 						end,
@@ -1054,7 +1068,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.bor(reg:get_gp(rs1), imm))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "ORI", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end,
@@ -1062,7 +1076,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.band(reg:get_gp(rs1), imm))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %d", "ANDI", Reg:getname(rd), Reg:getname(rs1), imm)
 							end
 						end
@@ -1092,7 +1106,7 @@ function Instruction:decode_32bit (disasm)
 								opname = "SUB"
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", opname, Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1100,7 +1114,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.lshift(rs1_value, rs2_value))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", "SLL", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1112,7 +1126,7 @@ function Instruction:decode_32bit (disasm)
 								reg:set_gp(rd, 0)
 							end
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", "SLT", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1132,7 +1146,11 @@ function Instruction:decode_32bit (disasm)
 								end
 							end
 
-							if disasm then
+							if dbgarg then
+								if dbgarg.allowPseudoOp and rs1 == 0 then
+									return string.format("%s %s, %s", "SNEZ", Reg:getname(rd), Reg:getname(rs2))
+								end
+
 								return string.format("%s %s, %s, %s", "SLTU", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1140,7 +1158,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.bxor(rs1_value, rs2_value))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", "XOR", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1161,7 +1179,7 @@ function Instruction:decode_32bit (disasm)
 
 							reg:set_gp(rd, op(rs1_value, rs2_value))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", opname, Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1169,7 +1187,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.bor(rs1_value, rs2_value))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", "OR", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end,
@@ -1177,7 +1195,7 @@ function Instruction:decode_32bit (disasm)
 						function ()
 							reg:set_gp(rd, bit.band(rs1_value, rs2_value))
 
-							if disasm then
+							if dbgarg then
 								return string.format("%s %s, %s, %s", "AND", Reg:getname(rd), Reg:getname(rs1), Reg:getname(rs2))
 							end
 						end
@@ -1185,7 +1203,7 @@ function Instruction:decode_32bit (disasm)
 					local retval
 
 					if fnt7 == 1 then
-						retval = self:decode_ext_m(disasm)
+						retval = self:decode_ext_m(dbgarg)
 					else
 						retval = decTabFnt3[decValFnt3()]()
 					end
@@ -1216,7 +1234,7 @@ function Instruction:decode_32bit (disasm)
 				function ()
 					reg:set_gp(rd, reg:get_pc() + imm20)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "AUIPC", Reg:getname(rd), imm20)
 					end
 				end,
@@ -1224,7 +1242,7 @@ function Instruction:decode_32bit (disasm)
 				function ()
 					reg:set_gp(rd, imm20)
 
-					if disasm then
+					if dbgarg then
 						return string.format("%s %s, %d", "LUI", Reg:getname(rd), imm20)
 					end
 				end,
@@ -1263,8 +1281,9 @@ function Instruction:decode_32bit (disasm)
 	return retval
 end
 
----@param disasm boolean
-function Instruction:step (disasm)
+---@param dbgarg table
+---@return string
+function Instruction:step (dbgarg)
 	if not self:fetch_instruction() then
 		return RV.ILLEGAL_INSTRUCTION
 	end
@@ -1272,11 +1291,11 @@ function Instruction:step (disasm)
 	local optab = {
 		-- Compressed Instruction
 		function ()
-			return self:decode_16bit(disasm)
+			return self:decode_16bit(dbgarg)
 		end,
 		-- Standard Instruction
 		function ()
-			return self:decode_32bit(disasm)
+			return self:decode_32bit(dbgarg)
 		end,
 		-- Extended 48-bit Instruction (Not Supported)
 		function ()

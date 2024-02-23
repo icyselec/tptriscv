@@ -13,6 +13,7 @@ local Mem = {
 		segment_size = 32,
 		panic_when_fault = false,
 		segment_map = {},
+		memory_usage = 0,
 	},
 }
 
@@ -439,19 +440,26 @@ function Mem:load_memory (base, size, filename)
 	local i = 0
 	local found
 
+	-- unlimited mode
+	if size == -1 then
+		size = RV.MAX_MEMORY_WORD
+	end
+
 	for line in f:lines() do
 		found = string.find(line, "^[-][-]")
 
 		if found == nil then
-			self:write_i32(base + i, tonumber(line, 16))
+			self:write_i32(base + i * 4, tonumber(line, 16))
 
 			if i > size then
 				break
 			end
 
-			i = i + 4
+			i = i + 1
 		end
 	end
+
+	self.debug.memory_usage = i
 
 	f:close()
 	return true
@@ -462,10 +470,15 @@ function Mem:dump_memory (base, size, filename)
 	if f == nil then return false end
 	local i = 0
 
+	-- unlimited mode, but the maximum limit is determined by memory usage.
+	if size == -1 then
+		size = self.debug.memory_usage + 1
+	end
+
 	repeat
-		local data = self:read_i32(base + i)
+		local data = self:read_i32(base + i * 4)
 		f:write(string.format("%X\n", data))
-		i = i + 4
+		i = i + 1
 	until i > size
 
 	f:close()
