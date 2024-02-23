@@ -26,7 +26,7 @@ RV = require("tptriscv.define.Config")
 
 local _ = require("tptriscv.elements.CFG")
 local _ = require("tptriscv.elements.CPU")
-local _ = require("tptriscv.elements.RAM")
+local _ = require("tptriscv.elements.DMA")
 local _ = require("tptriscv.elements.DBG")
 
 -- It prevents access to undeclared or uninitialized variables and print the name of variable.
