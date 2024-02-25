@@ -1,6 +1,7 @@
 local RefRelated = require("tptriscv.classes.RefRelated")
 local Instruction = require("tptriscv.classes.Instruction")
 local Reg = require("tptriscv.classes.Reg")
+local DecodedOpc = require("tptriscv.DecodedOpc")
 
 ---@class Cpu
 local Cpu = {
@@ -12,8 +13,11 @@ local Cpu = {
 	stat = {},
 	---@class Reg
 	regs = {},
-	---@class Instruction
-	instruction = {}
+	---@class Instruction[]
+	instruction = {},
+	---@class DecodedOpc[]
+	icache = {},
+	cacheAllocTab = {},
 }
 
 ---@nodiscard
@@ -29,13 +33,17 @@ function Cpu:new (o)
 	o.refs:add("mem", o.mem)
 	o.mem = nil
 
-	local instruction = Instruction:new{core = o}
+	local instruction0 = Instruction:new{refcpu = o}
+	local instruction1 = Instruction:new{refcpu = o}
 
-	if instruction == nil then
+	if instruction0 == nil or instruction1 == nil then
+		o.refs:del()
+		o.regs:del()
 		return
 	end
 
-	o.instruction = instruction
+	o.instruction[1] = instruction0
+	o.instruction[2] = instruction1
 
 	return o
 end

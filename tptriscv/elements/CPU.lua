@@ -28,16 +28,16 @@ end)
 -- tmp4  : not allocated
 
 elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
-	local instance_id = tpt.get_property('ctype', x, y)
+	local instanceId = tpt.get_property('ctype', x, y)
 
-	if instance_id <= 0 then -- When processor is not active
+	if instanceId <= 0 then -- When processor is not active
 		return
-	elseif Rv.instance[instance_id].cpu[1] == nil then
+	elseif Rv.instance[instanceId].cpu[1] == nil then
 		tpt.set_property('ctype', -1, x, y) -- this instance id is not initialized or invalid.
 		return
 	end
 
-	local instance = Rv.instance[instance_id]
+	local instance = Rv.instance[instanceId]
 	local cpu = instance.cpu[1]
 	local frequency = cpu.conf:getConfig("frequency") -- multiprocessiong not yet
 

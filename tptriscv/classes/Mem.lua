@@ -27,7 +27,7 @@ function Mem:new (o)
 	self.__index = self
 
 	setmetatable(o.data, { __index = function() return 0 end })
-	setmetatable(o.debug.segment_map, { __index = function() return 0 end })
+	setmetatable(o.debug.segmentMap, { __index = function() return 0 end })
 
 	return o
 end
@@ -44,9 +44,9 @@ end
 ---@return nil
 function Mem:print_debug_info ()
 	print("segmentation: " .. tostring(self.debug.segmentation))
-	print("segment_size: " .. tostring(self.debug.segment_size))
+	print("segment_size: " .. tostring(self.debug.segmentSize))
 	print("panic_when_fault: " .. tostring(self.debug.panicWhenFault))
-	print("segment_map: " .. tostring(self.debug.segment_map))
+	print("segment_map: " .. tostring(self.debug.segmentMap))
 end
 
 
@@ -303,7 +303,7 @@ function Mem:safeRead (cpu, ptr, mod)
 		function () return self:readI8(ptr)  end,
 		-- LH (i16)
 		function ()
-			if cpu.conf.check_aligned then
+			if cpu.conf.checkAligned then
 				local sub_offset = bit.band(ptr, 1)
 				if sub_offset ~= 0 then
 					cpu:halt("Mem:safe_read: Attempt to access unaligned memory.")
@@ -331,7 +331,7 @@ function Mem:safeRead (cpu, ptr, mod)
 				end,
 			}
 
-			if offset ~= 0 and cpu.conf.check_aligned then
+			if offset ~= 0 and cpu.conf.checkAligned then
 				cpu:halt("Mem:safe_read: Attempt to access unaligned memory.")
 				return
 			end
@@ -344,7 +344,7 @@ function Mem:safeRead (cpu, ptr, mod)
 		function () return self:readU8(ptr)  end,
 		-- LHU (u16)
 		function ()
-			if cpu.conf.check_aligned then
+			if cpu.conf.checkAligned then
 				local sub_offset = bit.band(ptr, 1)
 				if sub_offset ~= 0 then
 					cpu:halt("Mem:safe_read: Attempt to access unaligned memory.")
@@ -375,20 +375,20 @@ function Mem:safeWrite (cpu, ptr, mod, val)
 
 	if self.debug.segmentation then
 		local sub_ea = bit.rshift(ptr, 2)
-		sub_ea = bit.rshift(sub_ea, self.debug.segment_size)
+		sub_ea = bit.rshift(sub_ea, self.debug.segmentSize)
 		if self.debug.segment_map[sub_ea] == true then
-			if self.debug.panic_when_fault == true then
+			if self.debug.panicWhenFault == true then
 				cpu:halt("Segmentation fault")
 				return
 			end
 		end
 	end
 
-	if self.debug.check_memory_usage then
+	if self.debug.checkMemoryUsage then
 		local ea = self:getEffectiveAddress(ptr)
 
-		if self.debug.memory_usage < ea then
-			self.debug.memory_usage = ea - 1
+		if self.debug.memoryUsage < ea then
+			self.debug.memoryUsage = ea - 1
 		end
 	end
 
@@ -397,9 +397,9 @@ function Mem:safeWrite (cpu, ptr, mod, val)
 		function () self:writeI8(ptr, val) end,
 		-- SH (i16/u16)
 		function ()
-			if cpu.conf.check_aligned then
-				local sub_offset = bit.band(ptr, 1)
-				if sub_offset ~= 0 then
+			if cpu.conf.checkAligned then
+				local subOffset = bit.band(ptr, 1)
+				if subOffset ~= 0 then
 					cpu:halt("Mem:safe_write: Attempt to access misaligned memory.")
 					return
 				end
@@ -416,7 +416,7 @@ function Mem:safeWrite (cpu, ptr, mod, val)
 			local offset = bit.band(ptr, 3)
 
 			if offset ~= 0 then
-				if cpu.conf.check_aligned then
+				if cpu.conf.checkAligned then
 					cpu:halt("Mem:safe_write: Attempt to access misaligned memory.")
 					return
 				elseif bit.band(offset, 2) == 0 then
@@ -477,7 +477,7 @@ function Mem:loadMemory (base, size, filename)
 		end
 	end
 
-	self.debug.memory_usage = i
+	self.debug.memoryUsage = i
 
 	f:close()
 	return true
@@ -490,7 +490,7 @@ function Mem:dumpMemory (base, size, filename)
 
 	-- unlimited mode, but the maximum limit is determined by memory usage.
 	if size == -1 then
-		size = self.debug.memory_usage
+		size = self.debug.memoryUsage
 	end
 
 	repeat

@@ -3,9 +3,10 @@
 ---@field private extension string[]
 local CpuConfig = {
 	-- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
-	frequency = 5,
-	check_aligned = false,
+	frequency = 1,
+	checkAligned = false,
 	disasm = false,
+	enableRv32 = false,
 }
 
 
@@ -23,7 +24,7 @@ end
 function CpuConfig:del ()
 	for k, _ in pairs(self) do
 		if type(self[k]) ~= "function" then
-			self:set_config(k, nil)
+			self:setConfig(k, nil)
 		end
 	end
 

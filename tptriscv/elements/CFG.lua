@@ -32,5 +32,5 @@ elements.property(RVREGISTER, "Update", function (i, x, y, s, n)
 		return
 	end
 
-	local retval = func{i, x, y, s, n}
+	func(i, x, y, s, n)
 end)

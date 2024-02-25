@@ -26,7 +26,6 @@ local cpu
 elements.property(RVREGISTER, "Create", function (i, x, y, s, n)
 	if not enabled then
 		Rv.instance[1] = Instance:new{id = 1}
-		Rv.instance[1].cpu[1].conf:set_config("disasm", true)
 		cpu = Rv.instance[1].cpu[1]
 
 		if not cpu.refs.mem:loadMemory(0, -1, tpt.input("File Load", "Which file do you want to open?")) then
@@ -84,6 +83,6 @@ elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 		Rv.instance[1]:del()
 		sim.partKill(i)
 	else
-		before_pc = Rv.instance[1].cpu[1].regs:getPc()
+		beforePc = Rv.instance[1].cpu[1].regs:getPc()
 	end
 end)
