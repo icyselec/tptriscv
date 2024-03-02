@@ -39,7 +39,7 @@ elements.property(RVREGISTER, "Update", function (_, x, y, _, _)
 
 	local instance = Rv.instance[instanceId]
 	local cpu = instance.cpu[1]
-	local frequency = cpu.conf:getConfig("frequency") -- multiprocessiong not yet
+	local frequency = cpu.conf:getConfig("frequency") -- multiprocessing not yet
 
 	if cpu.stat:getStatus("online") then
 		for _ = 1, frequency do

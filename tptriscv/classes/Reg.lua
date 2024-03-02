@@ -42,13 +42,13 @@ function Reg:setGp (r, v)
 		return
 	end
 
-	self.gp[r+1] = bit.band(v, 0xFFFFFFFF)
+	self.gp[r+1] = bit.tobit(v)
 end
 
 ---@param r Integer The number of the register, the value is from 0 to 31.
 ---@return Integer
 function Reg:getGp (r)
-	return self.gp[r+1]
+	return bit.tobit(self.gp[r+1])
 end
 
 

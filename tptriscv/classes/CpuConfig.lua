@@ -3,7 +3,7 @@
 ---@field private extension string[]
 local CpuConfig = {
 	-- frequency of operation per frame The effective frequency is calculated as follows (multiplier * maximum frame limit) * (current frame count / maximum frame limit)
-	frequency = 1,
+	frequency = 16666,
 	checkAligned = false,
 	disasm = false,
 	enableRv32 = false,

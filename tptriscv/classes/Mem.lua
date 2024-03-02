@@ -85,7 +85,7 @@ function Mem:writeU8 (ptr, val)
 	---@type Address
 	local ea = Mem:getEffectiveAddress(ptr)
 
-	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))), bit.lshift(bit.band(val, mask), i * 8))
+	self.data[ea] = bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))) + bit.lshift(bit.band(val, mask), i * 8)
 end
 
 
@@ -124,6 +124,12 @@ end
 function Mem:readU32 (ptr)
 	---@type Address
 	local ea = Mem:getEffectiveAddress(ptr)
+
+	if self.debug.checkMemoryUsage then
+		if self.debug.memoryUsage < ea then
+			self.debug.memoryUsage = ea - 1
+		end
+	end
 
 	return self.data[ea]
 end
@@ -164,7 +170,7 @@ function Mem:writeI8 (ptr, val)
 	---@type Address
 	local ea = Mem:getEffectiveAddress(ptr)
 
-	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))), bit.lshift(bit.band(val, mask), i * 8))
+	self.data[ea] = bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 8))) + bit.lshift(bit.band(val, mask), i * 8)
 end
 
 
@@ -179,7 +185,7 @@ function Mem:readI16 (ptr)
 	---@type Address
 	local ea = self:getEffectiveAddress(ptr)
 
-	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, (1 - i) * 16))), (1 - i) * 16)
+	return bit.arshift(bit.lshift(bit.band(self.data[ea], bit.lshift(mask, i * 16)), (1 - i) * 16), (1 - i) * 16)
 end
 
 ---@param ptr Pointer Pure address value, not table index for Lua.
@@ -193,7 +199,7 @@ function Mem:writeI16 (ptr, val)
 	---@type Address
 	local ea = self:getEffectiveAddress(ptr)
 
-	self.data[ea] = bit.bor(bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 16))), bit.lshift(bit.band(val, mask), i * 16))
+	self.data[ea] = bit.band(self.data[ea], bit.bnot(bit.lshift(mask, i * 16))) + bit.lshift(bit.band(val, mask), i * 16)
 end
 
 

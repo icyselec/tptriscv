@@ -44,13 +44,14 @@ end)
 elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 	if enabled then
 		for _ = 1, cpu.conf:getConfig("frequency") do
-			cpu:run{allowPseudoOp = true, lowercase = true}
+			cpu:run()
+			if Rv.instance[1].cpu[1].stat:getStatus("online") == false then break end
 		end
 	else
 		return
 	end
 
-	if Rv.instance[1].cpu[1].regs:getPc() == beforePc then
+	if Rv.instance[1].cpu[1].stat:getStatus("online") == false then
 		local filename = tpt.input("File Dump", "What file do you want to print?")
 
 		while filename ~= "" and not Rv.instance[1].mem:dumpMemory(0, -1, filename) do
@@ -82,7 +83,5 @@ elements.property(RVREGISTER, "Update", function(i, x, y, s, n)
 		beforePc = -1
 		Rv.instance[1]:del()
 		sim.partKill(i)
-	else
-		beforePc = Rv.instance[1].cpu[1].regs:getPc()
 	end
 end)
